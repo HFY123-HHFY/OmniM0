@@ -70,6 +70,9 @@ void Key_Tick(void);
  */
 void key_Get(void);
 
+/* 临时的-按键控制直接电机 */
+void Key_Control_Motor(void);
+
 /* 当前最新按键值。
  * 0 = 无按键事件；1 = KEY1；2 = KEY2；3 = KEY3；4 = KEY4。
  */

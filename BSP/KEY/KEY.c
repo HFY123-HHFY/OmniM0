@@ -1,5 +1,11 @@
 #include "KEY.h"
 
+/*
+* 引用外部头文件
+*/
+#include "Control.h"
+#include "LED.h"
+
 /* 已注册的按键配置表，由 Enroll 层通过 KEY_Register 提供。 */
 static const KEY_Config_t *s_keyConfigTable;
 /* 当前配置表中的按键数量。 */
@@ -185,5 +191,35 @@ void key_Get(void)
 	{
 		Key = KeyNum;
 		KeyNum = 0;
+	}
+}
+
+/* 
+	临时的-按键控制直接电机
+*/
+void Key_Control_Motor(void)
+{
+	if (Key == 1U)
+	{
+		LED_Control(LED1, LED_HIGH);
+	}
+	if (Key == 2U)
+	{
+		LED_Control(LED2, LED_HIGH);
+		PID_EncoderSpeed_Set(&speed_loop, 1.5f, 40.0f, 0.0f, 60.0f); /* 设置速度环 PID 参数与目标值 */
+	}
+	if (Key == 3U)
+	{
+		LED_Control(LED3, LED_HIGH);;
+		PID_Reset(&speed_loop.left);
+		PID_Reset(&speed_loop.right);
+		PID_EncoderSpeed_Set(&speed_loop, 0.0f, 0.0f, 0.0f, 0.0f); /* 设置速度环 PID 参数与目标值 */
+	}
+	if (Key == 4U)
+	{
+		LED_Control(LED1, LED_LOW);
+		LED_Control(LED2, LED_LOW);
+		LED_Control(LED3, LED_LOW);
+		PID_EncoderSpeed_Set(&speed_loop, 1.5f, 40.0f, 0.0f, -20.0f); /* 设置速度环 PID 参数与目标值 */
 	}
 }

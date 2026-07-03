@@ -7,14 +7,10 @@
 #include "KEY.h"
 #include "Encoder.h"
 
-/* 程序运行的时间戳（s） */
-uint32_t Timer_Bsp_t = 0;
-
 /* printf节拍 */
 volatile uint8_t print_task_flag = 0;
-
-/* 编码器节拍 */
-volatile uint8_t Encoder_flag = 0;
+/* 程序运行的时间戳（s） */
+uint32_t Timer_Bsp_t = 0;
 
 /* 串口数据包解析结果缓存（新包到达时自动刷新） */
 int16_t USART_Packet_Data[USART_PACKET_DATA_LEN] = {0};
@@ -38,8 +34,9 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
 
 	if (pid_2ms_tick >= 2U)
 	{
+		// 预留PID计算接口
+
 		pid_2ms_tick = 0U;
-		pid_task_flag = 1U;
 	}
 }
 
@@ -49,43 +46,29 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
 void Control_Task_Encoder_Callback(API_TIM_Id_t id)
 {
 	static uint8_t Encoder_tick = 0U;
+	static uint8_t printf_tick = 0U;
+	static uint16_t time_t = 0U;
 
 	if (id != API_TIM2)
 	{
 		return;
 	}
+	// 按键扫描
+	Key_Tick();
 
 	Encoder_tick++;
+	printf_tick++;
+	time_t++;
 
 	if (Encoder_tick >= 20)
 	{
 		Encoder_tick = 0U;
-#if (ENROLL_MCU_TARGET == ENROLL_MCU_G3507)
+
 		G3507_Encoder_SnapshotAll();
-#endif
 		Encoder1_Speed = API_Encoder_GetSpeed(API_ENCODER_1);
 		Encoder2_Speed = API_Encoder_GetSpeed(API_ENCODER_2);
-		Encoder_flag = 1U;
+		PID_Speed_Control((float)(Encoder1_Speed), (float)(Encoder2_Speed)); /* 速度环 */
 	}
-}
-
-/*
- * API_TIM3: 1ms -> Key + printf + time
- */
-void Control_Task_Housekeeping_Callback(API_TIM_Id_t id)
-{
-	static uint8_t printf_tick = 0U;
-	static uint16_t time_t = 0U;
-
-	if (id != API_TIM3)
-	{
-		return;
-	}
-
-	Key_Tick();
-
-	printf_tick++;
-	time_t++;
 
 	if (printf_tick >= 50U)
 	{

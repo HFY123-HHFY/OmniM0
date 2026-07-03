@@ -43,11 +43,13 @@ void Enroll_ADC_Register(void);
 
 /* 定时器资源注册 */
 void Enroll_TIM_Register(void);
+
 /* 定时器中断回调注册。 */
 void Enroll_TIM_RegisterIrqHandler(API_TIM_IrqHandler_t handler);
 
 /* 串口资源注册 */
 void Enroll_USART_Register(void);
+
 /* 串口中断回调注册 */
 void Enroll_USART_RegisterIrqHandler(API_USART_IrqHandler_t handler);
 
@@ -80,5 +82,3 @@ void Enroll_Encoder_Register(void);
 #endif
 
 #endif /* __ENROLL_H */
-
-

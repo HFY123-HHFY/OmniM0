@@ -5,9 +5,6 @@
 
 #include "PID/PID.h"
 #include "Filter/Filter.h"
-#include "MPU6050_Int.h"
-#include "pwm.h"
-#include "TB6612.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,9 +15,6 @@ extern "C" {
 
 /* PID 输出加载到电机前的总限幅。 */
 #define MOTOR_MIX_LIMIT (2047.0f)
-
-/* PID 任务节拍标志：由定时中断置位。 */
-extern uint8_t pid_task_flag;
 
 /* 目标姿态/高度。 */
 extern float Target_Pitch;
@@ -42,16 +36,8 @@ extern PID_EncoderSpeed_t speed_loop;
 
 /*
  * 控制初始化：
- * 1) 初始化外环/内环 PID
- * 2) 初始化传感器低通滤波器
- * 3) 设置串级控制对象
  */
 void PID_Contorl_Init(void);
-
-/* 设置陀螺零偏（单位：原始 LSB）。 */
-void Set_Gyro_Bias(float bias_x, float bias_y, float bias_z);
-
-/* 速度环初始化。 */
 void PID_Speed_Init(void);
 
 /*
@@ -63,6 +49,17 @@ void PID_Pitch_Roll_Combined(float actual_pitch, float actual_roll);
  * 速度环控制函数 
 */
 void PID_Speed_Control(float actual_left, float actual_right);
+
+/*
+ * 陀螺零偏校准（上电后调用一次，飞行器必须静止）。
+ * samples        : 采样点数（建议 1000，约 5s）
+ * gravity_ref_out: 输出重力参考值 (aacz 均值)，可为 NULL
+ * 返回 1 成功，0 超时失败。
+ */
+uint8_t GyroBias_Calibrate(uint16_t samples, float *gravity_ref_out);
+
+/* 查询校准是否完成。 */
+uint8_t GyroBias_IsReady(void);
 
 /*
  * 预留电机加载接口。

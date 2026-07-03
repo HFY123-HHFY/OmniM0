@@ -1,0 +1,49 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/Debug",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/gcc-arm-none-eabi.cmake",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MCU_TARGET": "G3507"
+      }
+    },
+    {
+      "name": "Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/Release",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/gcc-arm-none-eabi.cmake",
+        "CMAKE_BUILD_TYPE": "Release",
+        "MCU_TARGET": "G3507"
+      }
+    },
+    {
+      "name": "Debug-G3507",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/G3507/Debug",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/gcc-arm-none-eabi.cmake",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MCU_TARGET": "G3507"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "Debug",
+      "configurePreset": "Debug"
+    },
+    {
+      "name": "Release",
+      "configurePreset": "Release"
+    },
+    {
+      "name": "Debug-G3507",
+      "configurePreset": "Debug-G3507"
+    }
+  ]
+}

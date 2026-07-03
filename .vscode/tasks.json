@@ -1,0 +1,63 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "_Cfg Debug",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--preset",
+				"Debug"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"hide": true
+		},
+		{
+			"label": "Build",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"--preset",
+				"Debug"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [
+				"$gcc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"dependsOn": [
+				"_Cfg Debug"
+			],
+			"dependsOrder": "sequence"
+		},
+		{
+			"label": "Flash",
+			"type": "shell",
+			"command": "cmake",
+			"args": [
+				"--build",
+				"--preset",
+				"Debug",
+				"--target",
+				"flash"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": [],
+			"dependsOn": [
+				"Build"
+			],
+			"dependsOrder": "sequence"
+		}
+	]
+}

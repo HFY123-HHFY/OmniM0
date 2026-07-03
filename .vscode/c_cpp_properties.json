@@ -1,0 +1,20 @@
+{
+    "configurations": [
+        {
+            "name": "ARM-GCC",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/Core/MSPM0G3507/inc",
+                "${workspaceFolder}/Drivers/Drivers_M0G3507/source",
+                "${workspaceFolder}/Drivers/Drivers_M0G3507/source/ti/devices/msp/m0p",
+                "${workspaceFolder}/Drivers/Drivers_M0G3507/source/third_party/CMSIS/Core/Include"
+            ],
+            "compilerPath": "C:/Program Files (x86)/Arm GNU Toolchain arm-none-eabi/13.2 Rel1/bin/arm-none-eabi-gcc.exe",
+            "compileCommands": "${workspaceFolder}/build/Debug/compile_commands.json",
+            "cStandard": "c11",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "gcc-arm"
+        }
+    ],
+    "version": 4
+}

@@ -18,23 +18,14 @@
  * - 调速/换总线只需改这一个文件
  */
 
-/* ================================================================
- *  G3507
- * ================================================================ */
-#if (ENROLL_MCU_TARGET == ENROLL_MCU_G3507)
-
 /* --- 总线选择 --- */
 #define OLED_I2C_BUS       API_I2C2
 #define OLED_SPI_BUS       API_SPI1
 #define MPU6050_I2C_BUS    API_I2C1
 
 /* --- 速率档位 --- */
-#define OLED_I2C_SPEED      API_I2C_SPEED_200K
+#define OLED_I2C_SPEED      API_I2C_SPEED_400K
 #define MPU6050_I2C_SPEED   API_I2C_SPEED_400K
 #define OLED_SPI_SPEED      API_SPI_SPEED_5M
-
-#else
-#error "Unsupported ENROLL_MCU_TARGET for bus rate profile."
-#endif
 
 #endif /* __BUS_RATE_H */

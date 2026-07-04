@@ -14,6 +14,9 @@ static uint8_t s_i2cCount;
 static volatile API_I2C_BusId_t s_activeBusId = API_I2C1;
 static volatile API_I2C_SpeedTypeDef s_i2cSpeed = API_I2C_SPEED_100K;
 
+/* 当前活跃总线是否已经完成 soft_i2c_hal_init。 */
+static uint8_t s_busReady;
+
 /* ===================== 内部辅助 ===================== */
 
 /*
@@ -39,6 +42,23 @@ static const API_I2C_Config_t *API_I2C_GetConfigById(API_I2C_BusId_t busId)
 	return 0;
 }
 
+/*
+ * 切换到指定总线对应的 GPIO 上下文。
+ * 仅当目标总线与当前缓存不一致，或总线尚未初始化时，才重新初始化底层 HAL。
+ */
+static void API_I2C_ApplyBusConfig(API_I2C_BusId_t busId, const API_I2C_Config_t *cfg)
+{
+	if ((cfg == 0) || ((s_busReady != 0U) && (s_activeBusId == busId)))
+	{
+		return;
+	}
+
+	soft_i2c_hal_init(cfg->sclPort, cfg->sclPin, cfg->sclIomux,
+	                  cfg->sdaPort, cfg->sdaPin, cfg->sdaIomux);
+	s_activeBusId = busId;
+	s_busReady = 1U;
+}
+
 /* ===================== 公共 API ===================== */
 
 /*
@@ -51,13 +71,12 @@ void API_I2C_Register(const API_I2C_Config_t *configTable, uint8_t count)
 
 	if ((configTable != 0) && (count > 0U))
 	{
-		s_activeBusId = (API_I2C_BusId_t)configTable[0].id;
-		soft_i2c_hal_init(configTable[0].sclPort, configTable[0].sclPin, configTable[0].sclIomux,
-		                  configTable[0].sdaPort, configTable[0].sdaPin, configTable[0].sdaIomux);
+		API_I2C_ApplyBusConfig((API_I2C_BusId_t)configTable[0].id, &configTable[0]);
 	}
 	else
 	{
 		s_activeBusId = API_I2C1;
+		s_busReady = 0U;
 	}
 }
 
@@ -71,9 +90,7 @@ void API_I2C_SelectBus(API_I2C_BusId_t busId)
 	cfg = API_I2C_GetConfigById(busId);
 	if (cfg != 0)
 	{
-		s_activeBusId = busId;
-		soft_i2c_hal_init(cfg->sclPort, cfg->sclPin, cfg->sclIomux,
-		                  cfg->sdaPort, cfg->sdaPin, cfg->sdaIomux);
+		API_I2C_ApplyBusConfig(busId, cfg);
 	}
 
 	/* 总线切换后恢复默认延时 (其他设备如 MPU6050 需要协议合规的时序) */
@@ -102,6 +119,11 @@ void API_I2C_DelayOn(void)
  */
 void API_I2C_SetSpeed(API_I2C_SpeedTypeDef speed)
 {
+	if (speed == s_i2cSpeed)
+	{
+		return;
+	}
+
 	switch (speed)
 	{
 	case API_I2C_SPEED_400K:
@@ -163,8 +185,14 @@ void API_I2C_Init(void)
 		const API_I2C_Config_t *cfg = API_I2C_GetConfigById(prevBus);
 		if (cfg != 0)
 		{
-			soft_i2c_hal_init(cfg->sclPort, cfg->sclPin, cfg->sclIomux,
-			                  cfg->sdaPort, cfg->sdaPin, cfg->sdaIomux);
+			/*
+			 * 上面的遍历会把底层 HAL 停留在“最后一条总线”的 GPIO 上下文，
+			 * 但 s_activeBusId 仍然保留旧值。
+			 * 这里必须强制清空 ready 状态，再把 prevBus 重新装载回来，
+			 * 否则 SelectBus 会误以为当前总线已经正确切回，导致扫描全 0。
+			 */
+			s_busReady = 0U;
+			API_I2C_ApplyBusConfig(prevBus, cfg);
 		}
 	}
 
@@ -174,6 +202,7 @@ void API_I2C_Init(void)
 	soft_i2c_hal_w_sda(1U);
 
 	/* 恢复默认速率延时 */
+	s_i2cSpeed = API_I2C_SPEED_100K;
 	soft_i2c_hal_set_speed(100U);
 	soft_i2c_hal_delay_on();
 }

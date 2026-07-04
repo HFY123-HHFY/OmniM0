@@ -137,7 +137,7 @@ int main(void)
 			{
 				print_task_flag = 0U;
 				// usart_printf(USART1, "key: %lu\r\n", Key);
-				usart_printf(USART2, "Pitch=%.2f Roll=%.2f Yaw=%.2f\r\n", Pitch, Roll, Yaw);
+				usart_printf(USART1, "Pitch=%.2f Roll=%.2f Yaw=%.2f\r\n", Pitch, Roll, Yaw);
 			}
 		#endif
 /* OLED数据打印 */

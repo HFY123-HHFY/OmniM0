@@ -28,6 +28,7 @@
 #include "MPU6050_Int.h"
 #include "TB6612.h"
 #include "Encoder.h"
+#include "gray_adc.h"
 
 #include <stddef.h>
 

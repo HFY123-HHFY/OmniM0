@@ -49,21 +49,19 @@ static void G3507_ADC_EnsureAdcReady(ADC12_Regs *adcBase)
 		return;
 	}
 
-	if (DL_ADC12_isPowerEnabled(adcBase))
+	if (!DL_ADC12_isPowerEnabled(adcBase))
 	{
-		return;
-	}
-
-	DL_ADC12_reset(adcBase);
-	DL_ADC12_enablePower(adcBase);
-	timeout = G3507_ADC_POWERUP_TIMEOUT;
-	while ((!DL_ADC12_isPowerEnabled(adcBase)) && (timeout > 0UL))
-	{
-		--timeout;
-	}
-	if (timeout == 0UL)
-	{
-		return;
+		DL_ADC12_reset(adcBase);
+		DL_ADC12_enablePower(adcBase);
+		timeout = G3507_ADC_POWERUP_TIMEOUT;
+		while ((!DL_ADC12_isPowerEnabled(adcBase)) && (timeout > 0UL))
+		{
+			--timeout;
+		}
+		if (timeout == 0UL)
+		{
+			return;
+		}
 	}
 
 	adcClockConfig.clockSel = DL_ADC12_CLOCK_SYSOSC;

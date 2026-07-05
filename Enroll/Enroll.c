@@ -136,6 +136,16 @@ static const TB6612_Config_t s_tb6612Table[] =
 };
 #undef ENROLL_TB6612_ITEM
 
+/* GrayADC 灰度传感器配置表：把 HW_GRAY_ADC_MAP 展开成 GrayADC_Config_t。 */
+#define ENROLL_GRAY_ADC_ITEM(ad0Port, ad0Pin, ad1Port, ad1Pin, ad2Port, ad2Pin) \
+	{ ad0Port, ad0Pin, ad1Port, ad1Pin, ad2Port, ad2Pin },
+
+static const GrayADC_Config_t s_grayAdcTable[] =
+{
+	HW_GRAY_ADC_MAP(ENROLL_GRAY_ADC_ITEM)
+};
+#undef ENROLL_GRAY_ADC_ITEM
+
 /****************************** API资源注册层 ************************/
 /* PWM 注册：登记板级 PWM 资源表。 */
 void Enroll_PWM_Register(void)
@@ -240,4 +250,10 @@ void Enroll_TB6612_Register(void)
 void Enroll_Encoder_Register(void)
 {
 	API_Encoder_Register(s_encoderTable, HW_ENCODER_COUNT);
+}
+
+/* GrayADC 灰度传感器注册：仅登记地址选择引脚配置表，不初始化硬件。 */
+void Enroll_GrayADC_Register(void)
+{
+	GrayADC_Register(s_grayAdcTable, HW_GRAY_ADC_COUNT);
 }

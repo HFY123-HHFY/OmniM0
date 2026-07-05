@@ -77,6 +77,9 @@ void Enroll_MPU6050_Register(void);
 /* 编码器资源注册：登记板级编码器资源表。 */
 void Enroll_Encoder_Register(void);
 
+/* GrayADC 灰度传感器注册：登记地址选择引脚（AD0/AD1/AD2）。 */
+void Enroll_GrayADC_Register(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -28,6 +28,10 @@
 #include "MPU6050_Int.h"
 #include "Control.h"
 #include "TB6612.h"
+#include "gray_adc.h"
+
+/* ── 灰度传感器实例 ── */
+static GrayADC_Sensor_t g_graySensor;
 
 int main(void)
 {
@@ -45,6 +49,7 @@ int main(void)
 	Enroll_OLED_Register();					/* OLED SPI 控制脚注册 */
 	Enroll_TB6612_Register();				/* TB6612 资源注册 */
 	Enroll_Encoder_Register();				/* 编码器 资源注册 */
+	Enroll_GrayADC_Register();				/* GrayADC 灰度传感器 资源注册 */
 
 	/* 注册后绑定中断回调*/
 	Enroll_USART_RegisterIrqHandler(Control_Task_USART_Callback); /* USART 中断回调注册 */
@@ -63,7 +68,7 @@ int main(void)
 /* 通信协议初始化 */
 	API_I2C_Init();						/* 软件 I2C 初始化 */
 	API_SPI_Init();						/* 软件 SPI 初始化 */
-	App_I2C_ScanOnce();					/* 开机执行一次 I2C 扫描 */
+	// App_I2C_ScanOnce();					/* 开机执行一次 I2C 扫描 */
 	// App_SPI_TestOnce();				/* 开机执行一次 SPI 测试 */
 
 /*BSP硬件抽象层初始化*/
@@ -71,10 +76,10 @@ int main(void)
 	KEY_Init(); // 初始化按键
 	OLED_Init(OLED_IF_SPI);		 		/* OLED_IF_I2C(4针) / OLED_IF_SPI(7针) */
 
-	MPU_Init();
-	uint8_t mpu6050_dma_int = mpu_dmp_init();
-	usart_printf(USART1, "mpu6050_dma_int= %d\r\n", mpu6050_dma_int);
-	Enroll_MPU6050_Register();				/* MPU6050 INT 资源注册（DMP 初始化后才能使能 EXTI） */
+	// MPU_Init();
+	// uint8_t mpu6050_dma_int = mpu_dmp_init();
+	// usart_printf(USART1, "mpu6050_dma_int= %d\r\n", mpu6050_dma_int);
+	// Enroll_MPU6050_Register();				/* MPU6050 INT 资源注册（DMP 初始化后才能使能 EXTI） */
 	/* 5秒陀螺零偏校准 */
 	// float gravity_ref = 0.0f;
 	// if (GyroBias_Calibrate(1000U, &gravity_ref) == 0U)
@@ -83,6 +88,7 @@ int main(void)
 	// 	while (1) {}
 	// }
 
+	GrayADC_Init();							/* GrayADC 灰度传感器初始化（地址引脚） */
 	TB6612_Init(); 							/* TB6612 电机驱动初始化 */
 	API_Encoder_Init(API_ENCODER_1); 		/* 编码器 1 初始化 */
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
@@ -92,15 +98,18 @@ int main(void)
 /* ── 调试开关：开启/关闭所有 printf ── */
 #define DEBUG_PRINT_ENABLE  1U
 /* ── 调试开关：开启/关闭所有 OLED显示 ── */
-#define DEBUG_OLED_ENABLE   1U
+#define DEBUG_OLED_ENABLE   0U
 
 	while (1)
 	{
+		/* GrayADC 灰度传感器任务：采集 8 路 ADC → 二值化 → 归一化 */
+		GrayADC_Task(&g_graySensor);
+
 		/* MPU6050 DMP */
 		if (mpu_flag == 1U)
 		{
 			mpu_flag = 0U;
-			mpu_dmp_get_data(&Pitch, &Roll, &Yaw);
+			// mpu_dmp_get_data(&Pitch, &Roll, &Yaw); 
 			// MPU_Get_Gyroscope(&gyrox, &gyroy, &gyroz);
 			/* MPU_Get_Accelerometer(&aacx, &aacy, &aacz); */
 		}
@@ -137,7 +146,35 @@ int main(void)
 			{
 				print_task_flag = 0U;
 				// usart_printf(USART1, "key: %lu\r\n", Key);
-				usart_printf(USART1, "Pitch=%.2f Roll=%.2f Yaw=%.2f\r\n", Pitch, Roll, Yaw);
+				// usart_printf(USART1, "Pitch=%.2f Roll=%.2f Yaw=%.2f\r\n", Pitch, Roll, Yaw);
+
+				/* GrayADC 灰度传感器数据打印 */
+				{
+					uint8_t d = GrayADC_GetDigital(&g_graySensor);
+					const uint16_t *nv = GrayADC_GetNormalized(&g_graySensor);
+
+#if GRAY_ADC_CALIBRATION_MODE == 1U
+					/* 校准模式：打印原始 ADC 值，用于确定 white/black 校准参数 */
+					usart_printf(USART1,
+						"RAW: %d %d %d %d %d %d %d %d\r\n",
+						g_graySensor.raw_value[0], g_graySensor.raw_value[1],
+						g_graySensor.raw_value[2], g_graySensor.raw_value[3],
+						g_graySensor.raw_value[4], g_graySensor.raw_value[5],
+						g_graySensor.raw_value[6], g_graySensor.raw_value[7]);
+#else
+					/* 正常模式：打印二值化结果 + 归一化值 */
+					usart_printf(USART1,
+						"D:%c%c%c%c%c%c%c%c N:%d %d %d %d %d %d %d %d\r\n",
+						(d & 0x01) ? '1' : '0', (d & 0x02) ? '1' : '0',
+						(d & 0x04) ? '1' : '0', (d & 0x08) ? '1' : '0',
+						(d & 0x10) ? '1' : '0', (d & 0x20) ? '1' : '0',
+						(d & 0x40) ? '1' : '0', (d & 0x80) ? '1' : '0',
+						nv ? nv[0] : 0, nv ? nv[1] : 0,
+						nv ? nv[2] : 0, nv ? nv[3] : 0,
+						nv ? nv[4] : 0, nv ? nv[5] : 0,
+						nv ? nv[6] : 0, nv ? nv[7] : 0);
+#endif
+				}
 			}
 		#endif
 /* OLED数据打印 */

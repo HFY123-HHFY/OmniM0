@@ -61,6 +61,11 @@ static void usart_disable_tx_irq(USART_TypeDef *USARTx)
 	DL_UART_Main_disableInterrupt((UART_Regs *)USARTx, DL_UART_MAIN_INTERRUPT_TX);
 }
 
+static void usart_enable_tx_irq(USART_TypeDef *USARTx)
+{
+	DL_UART_Main_enableInterrupt((UART_Regs *)USARTx, DL_UART_MAIN_INTERRUPT_TX);
+}
+
 static uint8_t usart_is_tx_irq_enabled(USART_TypeDef *USARTx)
 {
 	if (DL_UART_Main_getEnabledInterruptStatus((UART_Regs *)USARTx, DL_UART_MAIN_INTERRUPT_TX) != 0U)
@@ -152,12 +157,43 @@ void usart_send_byte(USART_TypeDef *USARTx, uint8_t Byte)
 	API_USART_WriteByte(id, Byte);
 }
 
-/* 异步发送 1 字节：G3507 当前统一走阻塞发送链路。 */
+/* 异步发送 1 字节：入队后由 TX 中断持续搬运到硬件 FIFO。 */
 uint8_t usart_send_byte_async(USART_TypeDef *USARTx, uint8_t Byte)
 {
-	(void)USARTx;
-	(void)Byte;
-	return 0U; /* G3507 不使用异步 TX 队列，统一走 API_USART_WriteByte 阻塞发送 */
+	USART_TxAsyncQueue *q;
+	uint16_t nextHead;
+	uint8_t txIrqEnabled;
+
+	q = usart_get_tx_queue(USARTx);
+	if (q == 0)
+	{
+		return 0U;
+	}
+
+	nextHead = (uint16_t)((q->head + 1U) % USART_TX_BUF_SIZE);
+	if (nextHead == q->tail)
+	{
+		return 0U; /* 队列满，交给上层阻塞兜底发送 */
+	}
+
+	q->buf[q->head] = Byte;
+	q->head = nextHead;
+
+	txIrqEnabled = usart_is_tx_irq_enabled(USARTx);
+	if (txIrqEnabled == 0U)
+	{
+		/*
+		 * 队列从空转非空时使能 TX 中断。
+		 * 若当前 FIFO 可写，立即 kick 一次，避免等待下一次硬件事件。
+		 */
+		usart_enable_tx_irq(USARTx);
+		if (usart_is_tx_ready(USARTx) != 0U)
+		{
+			usart_tx_irq_handler(USARTx);
+		}
+	}
+
+	return 1U;
 }
 
 /* 发送 C 字符串（逐字节调用 usart_send_byte）。 */

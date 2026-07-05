@@ -30,9 +30,6 @@
 #include "TB6612.h"
 #include "gray_adc.h"
 
-/* ── 灰度传感器实例 ── */
-static GrayADC_Sensor_t g_graySensor;
-
 int main(void)
 {
 /* 系统时钟配置初始化 */
@@ -92,19 +89,27 @@ int main(void)
 	TB6612_Init(); 							/* TB6612 电机驱动初始化 */
 	API_Encoder_Init(API_ENCODER_1); 		/* 编码器 1 初始化 */
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
-	PID_Speed_Init(); 						/* 速度环初始化 */
+	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
+
+	/* 速度环：左右轮各自 PID，20ms 周期，输出限幅 = TB6612_MAX_DUTY */
+	PID_EncoderSpeed_Set(&speed_loop, 1.4f, 35.0f, 0.0f, 0.0f);
+	/*                       		   kp    ki    kd  目标速度    */
+
+	/* 方向环：线位置 PID，5ms 周期，Out_max=180 留给速度环余量 */
+	Set_PID(&direction_pid, 0.12f, 0.08f, 0.08f);
+	/*                        kp      ki      kd                   */
+	PID_Init_WithLimit(&direction_pid, 50000.0f, 180.0f);
+	/*                               Integral_max  Out_max         */
+
 	LED_Turn(Buzzer1, 200U);				/* 蜂鸣器短鸣 */
 
 /* ── 调试开关：开启/关闭所有 printf ── */
 #define DEBUG_PRINT_ENABLE  1U
 /* ── 调试开关：开启/关闭所有 OLED显示 ── */
-#define DEBUG_OLED_ENABLE   0U
+#define DEBUG_OLED_ENABLE   1U
 
 	while (1)
 	{
-		/* GrayADC 灰度传感器任务：采集 8 路 ADC → 二值化 → 归一化 */
-		GrayADC_Task(&g_graySensor);
-
 		/* MPU6050 DMP */
 		if (mpu_flag == 1U)
 		{
@@ -116,29 +121,7 @@ int main(void)
 
 		/* KEY 控制*/
 		key_Get();
-		Key_Control_Motor();
-
-/* 摄像头数据包接收示例：固定 3 个数据 s88,-93,104e */
-		if (USART_DataTypeStruct.state == 2U)
-		{
-			uint8_t i;
-			/* 1. 缓存解析结果到全局数组 */
-			USART_Packet_Count = USART_DataTypeStruct.count;
-			for (i = 0U; i < USART_Packet_Count; i++)
-			{
-				USART_Packet_Data[i] = USART_Deal(&USART_DataTypeStruct, (int8_t)i);
-			}
-			USART_DataTypeStruct.state = 0U;
-
-			/* 2. 校验数据完整性并读取 */
-			if (USART_Packet_Count == 3U)
-			{
-				int16_t cam_x = USART_Packet_Data[0];
-				int16_t cam_y = USART_Packet_Data[1];
-				int16_t cam_z = USART_Packet_Data[2];
-				usart_printf(USART1, "X:%d, Y:%d, Z:%d\r\n", cam_x, cam_y, cam_z);
-			}
-		}
+		// Key_Control_Motor();
 
 /* 串口数据打印 */
 		#if (DEBUG_PRINT_ENABLE == 1U)
@@ -158,7 +141,8 @@ int main(void)
 		#if (DEBUG_OLED_ENABLE == 1U)
 			OLED_Clear();
 			OLED_Printf(0, 0, OLED_8X16, "%d", Timer_Bsp_t);
-			OLED_Printf(0, 16, OLED_8X16, "%.1f  %.1f  %.1f", Pitch, Roll, Yaw);
+			// OLED_Printf(0, 16, OLED_8X16, "%.1f  %.1f  %.1f", Pitch, Roll, Yaw);
+			OLED_Printf(0, 16, OLED_8X16, "Dir PID: %.1f", direction_pid.output);
 			OLED_Printf(0, 32, OLED_8X16, "L %d  R %d", Encoder1_Speed, Encoder2_Speed);
 			OLED_Update();
 		#endif

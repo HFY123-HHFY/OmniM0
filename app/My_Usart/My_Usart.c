@@ -553,3 +553,25 @@ void USART_Test(void)
 		usart_printf(USART1, "\r\n");
 	}
 }
+
+/* 摄像头数据包接收示例：固定 3 个数据 s88,-93,104e */
+		// if (USART_DataTypeStruct.state == 2U)
+		// {
+		// 	uint8_t i;
+		// 	/* 1. 缓存解析结果到全局数组 */
+		// 	USART_Packet_Count = USART_DataTypeStruct.count;
+		// 	for (i = 0U; i < USART_Packet_Count; i++)
+		// 	{
+		// 		USART_Packet_Data[i] = USART_Deal(&USART_DataTypeStruct, (int8_t)i);
+		// 	}
+		// 	USART_DataTypeStruct.state = 0U;
+
+		// 	/* 2. 校验数据完整性并读取 */
+		// 	if (USART_Packet_Count == 3U)
+		// 	{
+		// 		int16_t cam_x = USART_Packet_Data[0];
+		// 		int16_t cam_y = USART_Packet_Data[1];
+		// 		int16_t cam_z = USART_Packet_Data[2];
+		// 		usart_printf(USART1, "X:%d, Y:%d, Z:%d\r\n", cam_x, cam_y, cam_z);
+		// 	}
+		// }

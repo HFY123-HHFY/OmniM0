@@ -265,10 +265,11 @@ static float pid_calc_position(PID_TypeDef* pid, float actual, float dt)
 	pid->Actual = actual;
 	error = pid->Target - pid->Actual;
 
-	/* 死区处理：误差足够小时按 0，减少抖动。 */
+	/* 死区处理：误差足够小时按 0，减少抖动。同时衰减 I 项，防止回到中心后 I 残留推着电机继续转。 */
 	if ((pid->deadband > 0.0f) && (pid_abs(error) <= pid->deadband))
 	{
 		error = 0.0f;
+		pid->error_sum *= 0.9f; /* 死区内 I 项每拍衰减 10%，约 0.1s 泄到 0 */
 	}
 
 	/* 积分分离：偏差过大时暂不积分，避免积分在大扰动下累积过快。 */

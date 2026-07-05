@@ -148,42 +148,19 @@ int main(void)
 				// usart_printf(USART1, "key: %lu\r\n", Key);
 				// usart_printf(USART1, "Pitch=%.2f Roll=%.2f Yaw=%.2f\r\n", Pitch, Roll, Yaw);
 
-				/* GrayADC 灰度传感器数据打印 */
-				{
-					uint8_t d = GrayADC_GetDigital(&g_graySensor);
-					const uint16_t *nv = GrayADC_GetNormalized(&g_graySensor);
-
-#if GRAY_ADC_CALIBRATION_MODE == 1U
-					/* 校准模式：打印原始 ADC 值，用于确定 white/black 校准参数 */
-					usart_printf(USART1,
-						"RAW: %d %d %d %d %d %d %d %d\r\n",
-						g_graySensor.raw_value[0], g_graySensor.raw_value[1],
-						g_graySensor.raw_value[2], g_graySensor.raw_value[3],
-						g_graySensor.raw_value[4], g_graySensor.raw_value[5],
-						g_graySensor.raw_value[6], g_graySensor.raw_value[7]);
-#else
-					/* 正常模式：打印二值化结果 + 归一化值 */
-					usart_printf(USART1,
-						"D:%c%c%c%c%c%c%c%c N:%d %d %d %d %d %d %d %d\r\n",
-						(d & 0x01) ? '1' : '0', (d & 0x02) ? '1' : '0',
-						(d & 0x04) ? '1' : '0', (d & 0x08) ? '1' : '0',
-						(d & 0x10) ? '1' : '0', (d & 0x20) ? '1' : '0',
-						(d & 0x40) ? '1' : '0', (d & 0x80) ? '1' : '0',
-						nv ? nv[0] : 0, nv ? nv[1] : 0,
-						nv ? nv[2] : 0, nv ? nv[3] : 0,
-						nv ? nv[4] : 0, nv ? nv[5] : 0,
-						nv ? nv[6] : 0, nv ? nv[7] : 0);
-#endif
-				}
+				/* GrayADC 灰度传感器 — PID 调试打印（位置+偏差+二值化） */
+				/* 校准看原始值: GrayADC_PrintRaw()   只看来0/1: GrayADC_PrintBits() */
+				GrayADC_PrintLinePos(&g_graySensor, USART1);
 			}
 		#endif
+
 /* OLED数据打印 */
 		#if (DEBUG_OLED_ENABLE == 1U)
-		OLED_Clear();
-		OLED_Printf(0, 0, OLED_8X16, "%d", Timer_Bsp_t);
-		OLED_Printf(0, 16, OLED_8X16, "%.1f  %.1f  %.1f", Pitch, Roll, Yaw);
-		OLED_Printf(0, 32, OLED_8X16, "L %d  R %d", Encoder1_Speed, Encoder2_Speed);
-		OLED_Update();
+			OLED_Clear();
+			OLED_Printf(0, 0, OLED_8X16, "%d", Timer_Bsp_t);
+			OLED_Printf(0, 16, OLED_8X16, "%.1f  %.1f  %.1f", Pitch, Roll, Yaw);
+			OLED_Printf(0, 32, OLED_8X16, "L %d  R %d", Encoder1_Speed, Encoder2_Speed);
+			OLED_Update();
 		#endif
 	}
 }

@@ -10,13 +10,14 @@
  *   - 引脚映射集中在 Enroll/G3507_hw_config.h
  *   - 注册→初始化 两阶段模式（Register → Init）
  *   - BSP 层不直接写寄存器，通过 API_GPIO / API_ADC 操作
- *   - 驱动内部所有细节收敛在本文件，不污染 main.c
  */
 
 #include "gray_adc.h"
 #include "gpio.h"     /* API_GPIO_InitOutput / API_GPIO_Write */
 #include "adc.h"      /* API_ADC_GetValue */
 #include "Delay.h"    /* Delay_us */
+#include "My_Usart/My_Usart.h"  /* usart_printf / USART1/USART2 宏 */
+#include <stdio.h>    /* sprintf */
 
 /*===========================================================================
  * 默认校准值（来自 gray_adc.h 宏定义）
@@ -243,6 +244,7 @@ void GrayADC_InitSensor(GrayADC_Sensor_t *sensor,
     {
         sensor->raw_value[i]       = 0U;
         sensor->normalized[i]      = 0U;
+        sensor->digital_bits[i]    = 0U;
         sensor->calib_white[i]     = 0U;
         sensor->calib_black[i]     = 0U;
         sensor->threshold_white[i] = 0U;
@@ -335,15 +337,17 @@ static void GrayADC_ConvertToDigital(GrayADC_Sensor_t *sensor)
     {
         if (sensor->raw_value[i] > sensor->threshold_white[i])
         {
-            /* 高于白阈值 → 位 置 1 */
-            sensor->digital |= (uint8_t)(1U << i);
+            /* 高于白阈值 → 位 置 1（亮/白色） */
+            sensor->digital      |= (uint8_t)(1U << i);
+            sensor->digital_bits[i] = 1U;
         }
         else if (sensor->raw_value[i] < sensor->threshold_black[i])
         {
-            /* 低于黑阈值 → 位 清 0 */
-            sensor->digital &= (uint8_t)(~(1U << i));
+            /* 低于黑阈值 → 位 清 0（暗/黑色） */
+            sensor->digital      &= (uint8_t)(~(1U << i));
+            sensor->digital_bits[i] = 0U;
         }
-        /* else: 中间灰度 → 保持 bit(i) 不变（迟滞） */
+        /* else: 中间灰度 → 保持 digital bit 和 digital_bits[i] 不变（迟滞） */
     }
 }
 
@@ -453,55 +457,158 @@ void GrayADC_Task(GrayADC_Sensor_t *sensor)
 }
 
 /*===========================================================================
- * 用户接口
+ * 调试打印
  *===========================================================================*/
 
 /*
- * 获取二值化结果。
+ * 打印 8 路原始 ADC 值 — 用于校准。
+ * 输出示例：RAW: 2100 2050 1980 2120 1500 2080 2030 2070
  *
- * 返回值：
- *   8-bit 无符号数，bit0 = 第 1 路传感器，...，bit7 = 第 8 路。
- *   1 = 白色/亮（高于 white 阈值），0 = 黑色/暗（低于 black 阈值）。
- *
- * 典型用法（循线判断）：
- *   uint8_t d = GrayADC_GetDigital(&sensor);
- *   if (d == 0x00) { ... }  // 全部在线上（全黑）
- *   if (d == 0xFF) { ... }  // 全部离线（全白）
- *   if (d & 0x18)  { ... }  // 第4、5路检测到白线
+ * 用法：
+ *   1. 传感器放白色表面 → 记录 8 个值 → 填入 GRAY_ADC_WHITE_DEFAULT
+ *   2. 传感器放黑色表面 → 记录 8 个值 → 填入 GRAY_ADC_BLACK_DEFAULT
  */
-uint8_t GrayADC_GetDigital(const GrayADC_Sensor_t *sensor)
+void GrayADC_PrintRaw(const GrayADC_Sensor_t *sensor, void *usart)
 {
-    if (sensor == 0)
-    {
-        return 0U;
-    }
-    return sensor->digital;
+    if (sensor == 0) { return; }
+
+    usart_printf((USART_TypeDef *)usart,
+        "RAW: %d %d %d %d %d %d %d %d\r\n",
+        sensor->raw_value[0], sensor->raw_value[1],
+        sensor->raw_value[2], sensor->raw_value[3],
+        sensor->raw_value[4], sensor->raw_value[5],
+        sensor->raw_value[6], sensor->raw_value[7]);
 }
 
 /*
- * 获取归一化结果数组指针。
+ * 打印 8 路二值化 bits（纯 0/1
+ * 输出示例：D:00111100
+ *
+ * 解读：0=黑（在线上），1=白（离线）
+ *   例 00111100 → 中间 4 路（S2~S5）看到黑线，两侧看到白
+ */
+void GrayADC_PrintBits(const GrayADC_Sensor_t *sensor, void *usart)
+{
+    if (sensor == 0) { return; }
+
+    usart_printf((USART_TypeDef *)usart,
+        "D:%d%d%d%d%d%d%d%d\r\n",
+        sensor->digital_bits[0], sensor->digital_bits[1],
+        sensor->digital_bits[2], sensor->digital_bits[3],
+        sensor->digital_bits[4], sensor->digital_bits[5],
+        sensor->digital_bits[6], sensor->digital_bits[7]);
+}
+
+/*
+ * 打印线位置 + 偏差 + 二值化 — PID 调参专用，一屏看全。
+ *
+ * 输出示例（12mm 间距）：POS:4200 E:-120 D:00111100
+ *   POS = 黑线加权位置 (0~8400)
+ *   E   = 偏差 (POS - 中心)，负=偏左，正=偏右
+ *   D   = 8 路二值化状态
+ */
+void GrayADC_PrintLinePos(const GrayADC_Sensor_t *sensor, void *usart)
+{
+    if (sensor == 0) { return; }
+
+    int32_t pos    = GrayADC_LinePosition(sensor);
+    int32_t center = (int32_t)(7U * GRAY_ADC_SENSOR_SPACING_MM * 100U / 2U);
+    int32_t error  = pos - center;
+
+    usart_printf((USART_TypeDef *)usart,
+        "POS:%d E:%d D:%d%d%d%d%d%d%d%d\r\n",
+        pos, error,
+        sensor->digital_bits[0], sensor->digital_bits[1],
+        sensor->digital_bits[2], sensor->digital_bits[3],
+        sensor->digital_bits[4], sensor->digital_bits[5],
+        sensor->digital_bits[6], sensor->digital_bits[7]);
+}
+
+/*===========================================================================
+ * 巡线位置计算（供 PID 巡线控制使用）
+ *===========================================================================*/
+
+/*
+ * 计算黑线位置 — 加权平均法 + EMA 低通滤波。
+ *
+ * 原理：
+ *   传感器排列（假设间距 12mm，8 路从左到右）：
+ *    [S0] [S1] [S2] [S3] [S4] [S5] [S6] [S7]
+ *     0   1200  2400  3600  4800  6000  7200  8400  ← mm × 100
+ *
+ *   深色（黑线）吸收红外光 → ADC 值小 → normalized 值小。
+ *   为让黑线处权重更大，用 (bits - normalized[i]) 取反。
+ *
+ *   加权公式（raw）：
+ *     pos = Σ( (bits - nv[i]) * i * spacing * 100 ) / Σ( bits - nv[i] )
+ *
+ *   再经 EMA 低通：
+ *     filtered = filtered * (1 - 1/N) + pos * (1/N)
+ *
+ *   当分母太小（全白/丢线）时，返回上一次有效位置（static 保持）。
  *
  * 返回值：
- *   指向 8 个 uint16_t 的指针，范围 [0, bits]。
- *   在正常模式且校准完成后有效；否则返回 NULL。
- *
- * 典型用法（循线加权位置计算）：
- *   const uint16_t *nv = GrayADC_GetNormalized(&sensor);
- *   if (nv != NULL) {
- *       int32_t weighted_sum = 0, total = 0;
- *       for (int i = 0; i < 8; i++) {
- *           weighted_sum += (int32_t)nv[i] * i * 1000;
- *           total += (int32_t)nv[i];
- *       }
- *       int32_t line_pos = (total > 0) ? (weighted_sum / total) : 0;
- *       // line_pos: 0=最左, 7000=最右
- *   }
+ *   [0, 7*spacing*100] — 黑线加权中心位置（单位 = 0.01mm）
+ *   -1                 — sensor 无效/未校准
  */
-const uint16_t *GrayADC_GetNormalized(const GrayADC_Sensor_t *sensor)
+int32_t GrayADC_LinePosition(const GrayADC_Sensor_t *sensor)
 {
+    static int32_t s_filtered = -1;        /* EMA 滤波历史值 */
+    int32_t        weighted   = 0;
+    int32_t        total      = 0;
+    int32_t        dark;
+    int32_t        rawPos;
+    const int32_t  step       = (int32_t)(GRAY_ADC_SENSOR_SPACING_MM * 100UL); /* 单步间距 */
+    const int32_t  maxPos     = 7 * step;   /* 最右位置 = 7 × 间距 × 100 */
+    const int32_t  centerPos  = maxPos / 2; /* 居中位置 */
+    uint8_t i;
+
     if ((sensor == 0) || (sensor->calib_ready == 0U))
     {
-        return 0;
+        s_filtered = -1;
+        return -1;
     }
-    return sensor->normalized;
+
+    /* 首次调用 → 初始化为居中的滤波值 */
+    if (s_filtered < 0)
+    {
+        s_filtered = centerPos;
+    }
+
+    for (i = 0U; i < 8U; i++)
+    {
+        /*
+         * dark = 归一化值的取反：值越大表示越暗（越可能是黑线）。
+         * 用 4096 减去归一化值，使得黑线处权重最大。
+         */
+        dark = (int32_t)((uint16_t)sensor->bits) - (int32_t)sensor->normalized[i];
+        if (dark < 0) { dark = 0; }
+
+        /* 物理位置 = i × 间距 × 100 */
+        weighted += dark * (int32_t)i * step;
+        total    += dark;
+    }
+
+    /* 全白 / 丢线 → 保持上一次有效位置，防止车乱转 */
+    if (total < 50)
+    {
+        return s_filtered;
+    }
+
+    rawPos = weighted / total;
+
+    /* 限幅 */
+    if (rawPos < 0)       { rawPos = 0; }
+    if (rawPos > maxPos)  { rawPos = maxPos; }
+
+#if GRAY_ADC_POSITION_SMOOTHING > 0U
+    /* EMA 低通：s_filtered = s_filtered*(1-1/N) + rawPos*(1/N) */
+    s_filtered = s_filtered
+               - s_filtered / (int32_t)(GRAY_ADC_POSITION_SMOOTHING)
+               + rawPos     / (int32_t)(GRAY_ADC_POSITION_SMOOTHING);
+#else
+    s_filtered = rawPos;
+#endif
+
+    return s_filtered;
 }

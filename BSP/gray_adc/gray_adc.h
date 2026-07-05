@@ -8,6 +8,26 @@ extern "C" {
 #endif
 
 /*===========================================================================
+ * 传感器物理参数（根据实际硬件调整）
+ *===========================================================================*/
+
+/*
+ * 两个传感器管之间的中心间距（毫米）。
+ * 用直尺量相邻两个灰度管的中心距离，填入实际值。
+ * 例：12mm → 位置范围 [0, 8400]，居中 = 4200
+ */
+#define GRAY_ADC_SENSOR_SPACING_MM  12U
+
+/*
+ * 位置输出 EMA 低通滤波强度（0 = 不滤波）。
+ *
+ * 值越大滤波越重、位置越稳、但响应越慢。
+ * 建议：2~6（轻滤波），比赛时如果赛道抖动大可以调到 8~12。
+ * 设为 0 则完全关闭滤波，raw 位置直出。
+ */
+#define GRAY_ADC_POSITION_SMOOTHING  4U
+
+/*===========================================================================
  * 运行模式切换
  *===========================================================================*/
 /*
@@ -57,6 +77,7 @@ typedef struct
     uint16_t raw_value[8];         /* 原始 ADC 值（8 路），校准/正常模式均有效 */
     uint16_t normalized[8];        /* 归一化值 [0 ~ bits]，仅正常模式有效   */
     uint8_t  digital;              /* 二值化结果 bit0=第1路...bit7=第8路    */
+    uint8_t  digital_bits[8];      /* 二值化拆分：digital_bits[0]=第1路(0/1), ...[7]=第8路 */
 
     /* ── 校准参数（由 GrayADC_InitSensor 填充） ── */
     uint16_t calib_white[8];       /* 白色基准 ADC 值              */
@@ -128,17 +149,64 @@ void GrayADC_InitSensor(GrayADC_Sensor_t *sensor,
 void GrayADC_Task(GrayADC_Sensor_t *sensor);
 
 /*
- * 获取二值化结果（8-bit，bit0 = 第1路）：
- *   1 = 亮（白色），0 = 暗（黑色）。
- * 仅在正常模式且校准完成后有意义。
+ * 打印 8 路原始 ADC 值（用于校准）。
+ *
+ * 输出格式：RAW: 2100 2050 1980 2120 1500 2080 2030 2070
+ *
+ * 用法：GrayADC_PrintRaw(&g_graySensor, USART1);
+ * 用于校准模式下观察原始值，确定 white/black 校准参数。
  */
-uint8_t GrayADC_GetDigital(const GrayADC_Sensor_t *sensor);
+void GrayADC_PrintRaw(const GrayADC_Sensor_t *sensor, void *usart);
 
 /*
- * 获取归一化结果数组指针（8 个 uint16_t）。
- * 仅在正常模式且校准完成后有效；否则返回 NULL。
+ * 打印 8 路二值化 bits（纯 0/1），不包含 ADC 原始值。
+ *
+ * 输出格式：D:00111100
+ *   - 0 = 黑线（暗），1 = 白线（亮）
+ *   - 例：00111100 表示第3、4、5、6路看到黑线
+ *
+ * 用法：GrayADC_PrintBits(&g_graySensor, USART1);
  */
-const uint16_t *GrayADC_GetNormalized(const GrayADC_Sensor_t *sensor);
+void GrayADC_PrintBits(const GrayADC_Sensor_t *sensor, void *usart);
+
+/*
+ * 打印线位置 + 偏差 + 二值化 bits（PID 调试专用）。
+ *
+ * 输出格式：POS:4200 E:-120 D:00111100
+ *   POS = 黑线加权位置 (0~8400 @12mm)，EMA 滤波后
+ *   E   = 偏差 (POS - 中心)，负=偏左，正=偏右
+ *   D   = 8 路二值化状态
+ *
+ * 用法：GrayADC_PrintLinePos(&g_graySensor, USART1);
+ */
+void GrayADC_PrintLinePos(const GrayADC_Sensor_t *sensor, void *usart);
+
+/*
+ * 计算黑线位置 — 加权平均法 + EMA 低通滤波。
+ *
+ * 返回值：黑线的加权中心位置（单位 = 0.01mm）。
+ *   范围 [0, spacing×700]，居中 = spacing×700/2。
+ *   例 12mm 间距 → [0, 8400]，居中 = 4200。
+ *   返回 -1 = 传感器无效/未校准。
+ *
+ * 位置分辨率（加权平均自然提供亚传感器精度）：
+ *   黑线覆盖 ≥2 个传感器时，归一化值产生中间权重，
+ *   位置会平滑过渡而非跳变。
+ *   例：线从 S3 滑到 S4，pos 从 ~3600 渐渐变到 ~4800，约 1200 个细分步进。
+ *
+ * EMA 滤波（GRAY_ADC_POSITION_SMOOTHING 控制强度）：
+ *   filtered = filtered*(1-1/N) + raw*(1/N)
+ *   滤除单次 ADC 噪声和微小机械抖动，让 PID 输入更干净。
+ *
+ * 丢线保护：全白时保持上一次有效位置，不会乱跳。
+ *
+ * 典型巡线 PID 用法：
+ *   int32_t pos   = GrayADC_LinePosition(&g_graySensor);
+ *   int32_t error = pos - (7*间距*100/2);  // 减中心
+ *   int32_t steer = PID_Direction_Calculate(error);
+ *   TB6612_SetSpeed(baseSpeed + steer, baseSpeed - steer);
+ */
+int32_t GrayADC_LinePosition(const GrayADC_Sensor_t *sensor);
 
 #ifdef __cplusplus
 }

@@ -50,10 +50,10 @@ extern "C" {
  *
  * 注意：如果未调用 GrayADC_InitSensor()，驱动会在首次 Task 时自动使用默认值。
  */
-#define GRAY_ADC_WHITE_DEFAULT  { 1800U, 1800U, 1800U, 1800U, \
-                                  1800U, 1800U, 1800U, 1800U }
-#define GRAY_ADC_BLACK_DEFAULT  {  300U,  300U,  300U,  300U, \
-                                   300U,  300U,  300U,  300U }
+#define GRAY_ADC_WHITE_DEFAULT  { 1461U, 1356U, 3015U, 2760U, \
+                                  2540U, 2138U, 2893U, 2750U }
+#define GRAY_ADC_BLACK_DEFAULT  {  116U,  114U,  115U,  115U, \
+                                   112U,  113U,  111U,  108U }
 
 /*===========================================================================
  * 配置结构体：地址选择引脚 — 由 Enroll 注册层填充

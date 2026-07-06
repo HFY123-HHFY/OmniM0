@@ -7,6 +7,7 @@
 #include "KEY.h"
 #include "Encoder.h"
 #include "gray_adc.h"
+#include "TB6612.h"
 
 /* printf节拍 */
 volatile uint8_t print_task_flag = 0;
@@ -81,15 +82,41 @@ void Control_Task_Encoder_Callback(API_TIM_Id_t id)
 
 	if (Encoder_tick >= 20)
 	{
+		static uint8_t g_running = 0U; /* 0=停车, 1=循线中 */
+
 		Encoder_tick = 0U;
 
 		G3507_Encoder_SnapshotAll();
 		Encoder1_Speed = API_Encoder_GetSpeed(API_ENCODER_1);
 		Encoder2_Speed = API_Encoder_GetSpeed(API_ENCODER_2);
 
-		/* 20ms: 循线控制 → TB6612 */
-		/* 正式: LineFollow_Output()   测速度: PID_Speed_Control()   测方向: Direction_Test_Control() */
-		Direction_Test_Control();
+		/* ── 按键启停 ── */
+		if (Key == 2U)
+		{
+			if (g_running == 0U)
+			{
+				g_running = 1U;
+				PID_Reset(&direction_pid);          /* 清方向环历史 */
+				PID_Reset(&speed_loop.left);         /* 清速度环历史 */
+				PID_Reset(&speed_loop.right);
+			}
+		}
+		else if (Key == 3U)
+		{
+			g_running = 0U;
+			TB6612_SetSpeed(0, 0);                  /* 立即停车 */
+			PID_Reset(&direction_pid);
+			PID_Reset(&speed_loop.left);
+			PID_Reset(&speed_loop.right);
+		}
+
+		/* ── 循线控制 ── */
+		if (g_running != 0U)
+		{
+			LineFollow_Output((float)Encoder1_Speed, (float)Encoder2_Speed);
+			// Direction_Test_Control();
+			// PID_Speed_Control((float)Encoder1_Speed, (float)Encoder2_Speed);
+		}
 	}
 
 	if (printf_tick >= 50U)

@@ -77,13 +77,6 @@ int main(void)
 	// uint8_t mpu6050_dma_int = mpu_dmp_init();
 	// usart_printf(USART1, "mpu6050_dma_int= %d\r\n", mpu6050_dma_int);
 	// Enroll_MPU6050_Register();				/* MPU6050 INT 资源注册（DMP 初始化后才能使能 EXTI） */
-	/* 5秒陀螺零偏校准 */
-	// float gravity_ref = 0.0f;
-	// if (GyroBias_Calibrate(1000U, &gravity_ref) == 0U)
-	// {
-	// 	/* calib timeout - halt */
-	// 	while (1) {}
-	// }
 
 	GrayADC_Init();							/* GrayADC 灰度传感器初始化（地址引脚） */
 	TB6612_Init(); 							/* TB6612 电机驱动初始化 */
@@ -92,15 +85,12 @@ int main(void)
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
 
 	/* 速度环：左右轮各自 PID，20ms 周期，输出限幅 = TB6612_MAX_DUTY */
-	PID_EncoderSpeed_Set(&speed_loop, 1.4f, 35.0f, 0.0f, 0.0f);
+	PID_EncoderSpeed_Set(&speed_loop, 1.4f, 35.0f, 0.0f, 20.0f);
 	/*                       		   kp    ki    kd  目标速度    */
-
 	/* 方向环：线位置 PID，5ms 周期，Out_max=180 留给速度环余量 */
-	Set_PID(&direction_pid, 0.12f, 0.08f, 0.08f);
+	Set_PID(&direction_pid, 0.04f, 0.02f, 0.0f);
 	/*                        kp      ki      kd                   */
-	PID_Init_WithLimit(&direction_pid, 50000.0f, 180.0f);
 	/*                               Integral_max  Out_max         */
-
 	LED_Turn(Buzzer1, 200U);				/* 蜂鸣器短鸣 */
 
 /* ── 调试开关：开启/关闭所有 printf ── */
@@ -121,7 +111,6 @@ int main(void)
 
 		/* KEY 控制*/
 		key_Get();
-		// Key_Control_Motor();
 
 /* 串口数据打印 */
 		#if (DEBUG_PRINT_ENABLE == 1U)
@@ -130,10 +119,7 @@ int main(void)
 				print_task_flag = 0U;
 				// usart_printf(USART1, "key: %lu\r\n", Key);
 				// usart_printf(USART1, "Pitch=%.2f Roll=%.2f Yaw=%.2f\r\n", Pitch, Roll, Yaw);
-
-				/* GrayADC 灰度传感器 — PID 调试打印（位置+偏差+二值化） */
-				/* 校准看原始值: GrayADC_PrintRaw()   只看来0/1: GrayADC_PrintBits() */
-				GrayADC_PrintLinePos(&g_graySensor, USART1);
+				GrayADC_PrintLinePos(&g_graySensor, USART2);
 			}
 		#endif
 
@@ -141,6 +127,7 @@ int main(void)
 		#if (DEBUG_OLED_ENABLE == 1U)
 			OLED_Clear();
 			OLED_Printf(0, 0, OLED_8X16, "%d", Timer_Bsp_t);
+			OLED_Printf(64, 0, OLED_8X16, "%d", Key);
 			// OLED_Printf(0, 16, OLED_8X16, "%.1f  %.1f  %.1f", Pitch, Roll, Yaw);
 			OLED_Printf(0, 16, OLED_8X16, "Dir PID: %.1f", direction_pid.output);
 			OLED_Printf(0, 32, OLED_8X16, "L %d  R %d", Encoder1_Speed, Encoder2_Speed);

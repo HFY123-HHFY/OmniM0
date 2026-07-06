@@ -32,6 +32,7 @@ void PID_Control_Init(void)
 
 	/* ── 方向环结构 ── */
 	PID_Init(&direction_pid);
+	PID_Init_WithLimit(&direction_pid, 50000.0f, 180.0f);
 	PID_SetSampleTime(&direction_pid, 0.005f);
 	PID_SetDeadband(&direction_pid, 60.0f);
 	PID_SetIntegralSeparation(&direction_pid, 3000.0f);
@@ -68,13 +69,16 @@ void Direction_Control(void)
 	}
 
 	PID_SetTarget(&direction_pid, (float)center);
-	g_steer = PID_Calc(&direction_pid, (float)pos);
+	g_steer = -PID_Calc(&direction_pid, (float)pos); /* 负号：线在左(pos<center)→error>0→PID>0→steer<0→左转回线 */
 }
 
 /* =========================================================================
  * LineFollow_Output — 速度环 + 方向环融合输出（TIM2 20ms）
  *
- * 正式循线用。唯一写 TB6612 的入口，杜绝两个 ISR 抢硬件。
+ * steer>0 → 左轮加速、右轮减速 → 车右转（纠正"线偏右"）
+ * steer<0 → 左轮减速、右轮加速 → 车左转（纠正"线偏左"）
+ *
+ * 正式循线用。唯一写 TB6612 的入口。
  * ========================================================================= */
 void LineFollow_Output(float actual_left, float actual_right)
 {
@@ -88,8 +92,8 @@ void LineFollow_Output(float actual_left, float actual_right)
 	                         &out_left, &out_right);
 
 	/* ── 2. 融合方向环 steer ── */
-	left  = (int16_t)out_left  + (int16_t)g_steer;
-	right = (int16_t)out_right - (int16_t)g_steer;
+	left  = (int16_t)out_left  - (int16_t)g_steer;
+	right = (int16_t)out_right + (int16_t)g_steer;
 
 	/* ── 3. 限幅 + 死区 → 写电机 ── */
 	MotorOutput_Clamp(&left, &right);
@@ -120,8 +124,8 @@ void PID_Speed_Control(float actual_left, float actual_right)
  */
 void Direction_Test_Control(void)
 {
-	int16_t left  =  (int16_t)g_steer;
-	int16_t right = -(int16_t)g_steer;
+	int16_t left  = -(int16_t)g_steer;
+	int16_t right = (int16_t)g_steer;
 
 	MotorOutput_Clamp(&left, &right);
 	TB6612_SetSpeed(left, right);

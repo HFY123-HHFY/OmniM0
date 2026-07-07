@@ -58,6 +58,20 @@ void PID_Speed_Control(float actual_left, float actual_right);
  */
 void Direction_Test_Control(void);
 
+/*
+ * Control_Run — 循线主控（TIM2 20ms 调用一次）。
+ *
+ * 内部包含：按键启停、路口检测、转弯、速度+方向融合。
+ * Control_Task.c 只需要调这一个函数，所有控制逻辑收敛在这里。
+ */
+void Control_Run(float actual_left, float actual_right);
+
+/*
+ * Control_IsTurning — 返回 1 表示正在转弯。
+ * TIM1 用这个判断是否跳过方向环 PID。
+ */
+uint8_t Control_IsTurning(void);
+
 #ifdef __cplusplus
 }
 #endif

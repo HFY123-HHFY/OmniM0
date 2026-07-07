@@ -4,6 +4,7 @@
 #include "pwm.h"
 #include "TB6612.h"
 #include "KEY.h"
+#include "LED.h"
 
 /* =========================================================================
  * PID 对象
@@ -46,10 +47,22 @@ static float g_steer = 0.0f;
  * ========================================================================= */
 void MotorOutput_Clamp(int16_t *left, int16_t *right)
 {
-	if (*left  >  (int16_t)TB6612_MAX_DUTY) { *left  =  (int16_t)TB6612_MAX_DUTY; }
-	if (*left  < -(int16_t)TB6612_MAX_DUTY) { *left  = -(int16_t)TB6612_MAX_DUTY; }
-	if (*right >  (int16_t)TB6612_MAX_DUTY) { *right =  (int16_t)TB6612_MAX_DUTY; }
-	if (*right < -(int16_t)TB6612_MAX_DUTY) { *right = -(int16_t)TB6612_MAX_DUTY; }
+	if (*left  >  (int16_t)TB6612_MAX_DUTY)
+	{
+		*left  =  (int16_t)TB6612_MAX_DUTY;
+	}
+	if (*left  < -(int16_t)TB6612_MAX_DUTY)
+	{
+		*left  = -(int16_t)TB6612_MAX_DUTY;
+	}
+	if (*right >  (int16_t)TB6612_MAX_DUTY)
+	{
+		*right =  (int16_t)TB6612_MAX_DUTY;
+	}
+	if (*right < -(int16_t)TB6612_MAX_DUTY)
+	{
+		*right = -(int16_t)TB6612_MAX_DUTY;
+	}
 }
 
 /* =========================================================================
@@ -69,7 +82,7 @@ void Direction_Control(void)
 	}
 
 	PID_SetTarget(&direction_pid, (float)center);
-	g_steer = -PID_Calc(&direction_pid, (float)pos); /* 负号：线在左(pos<center)→error>0→PID>0→steer<0→左转回线 */
+	g_steer = -PID_Calc(&direction_pid, (float)pos);
 }
 
 /* =========================================================================
@@ -92,8 +105,8 @@ void LineFollow_Output(float actual_left, float actual_right)
 	                         &out_left, &out_right);
 
 	/* ── 2. 融合方向环 steer ── */
-	left  = (int16_t)out_left  - (int16_t)g_steer;
-	right = (int16_t)out_right + (int16_t)g_steer;
+	left  = (int16_t)out_left  + (int16_t)g_steer;
+	right = (int16_t)out_right - (int16_t)g_steer;
 
 	/* ── 3. 限幅 + 死区 → 写电机 ── */
 	MotorOutput_Clamp(&left, &right);
@@ -124,9 +137,93 @@ void PID_Speed_Control(float actual_left, float actual_right)
  */
 void Direction_Test_Control(void)
 {
-	int16_t left  = -(int16_t)g_steer;
-	int16_t right = (int16_t)g_steer;
+	int16_t left  = (int16_t)g_steer;
+	int16_t right = -(int16_t)g_steer;
 
 	MotorOutput_Clamp(&left, &right);
 	TB6612_SetSpeed(left, right);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+ * Control_Run — 所有循线控制逻辑的入口
+ * ══════════════════════════════════════════════════════════════════════ */
+
+#define TURN_BRAKE_MS   5U   /* 刹车时长：发现路口后双轮急刹多久，杀前进惯量 */
+#define TURN_PIVOT_MS   150U   /* 差速转弯时长：逆时针 pivot 多久，决定转的角度 */
+#define TURN_DEBOUNCE   1U     /* 路口去抖拍数：连续多少拍(20ms/拍)左2路见黑才触发 */
+
+/* ↓ 以下由上面 3 个自动算出，不用改 ↓ */
+#define TURN_BRAKE_TICK (TURN_BRAKE_MS  / 20U)  /* 刹车拍数 (1拍=20ms) */
+#define TURN_PIVOT_TICK (TURN_PIVOT_MS  / 20U)  /* 差速转弯拍数 */
+#define TURN_TOTAL_TICK (TURN_BRAKE_TICK + TURN_PIVOT_TICK)  /* 总拍数：刹完转到此值退出 */
+
+static uint8_t  s_running   = 0U;  /* 0=停车, 1=运行 */
+static uint8_t  s_turning   = 0U;  /* 0=直走, 1=转弯 */
+static uint8_t  s_turn_db   = 0U;  /* 去抖计数 */
+static uint16_t s_turn_tick = 0U;  /* 转弯时序 (20ms/拍) */
+
+uint8_t Control_IsTurning(void)
+{
+	return s_turning;
+}
+
+void Control_Run(float actual_left, float actual_right)
+{
+	/* ── 按键 ── */
+	if (Key == 2U && s_running == 0U)
+	{
+		s_running = 1U;
+		s_turning = 0U;
+		s_turn_db = s_turn_tick = 0U;
+		PID_Reset(&direction_pid);
+		PID_Reset(&speed_loop.left);
+		PID_Reset(&speed_loop.right);
+	}
+	else if (Key == 3U)
+	{
+		s_running = 0U;
+		s_turning = 0U;
+		s_turn_db = s_turn_tick = 0U;
+		TB6612_SetSpeed(0, 0);
+		PID_Reset(&direction_pid);
+		PID_Reset(&speed_loop.left);
+		PID_Reset(&speed_loop.right);
+	}
+
+	if (s_running == 0U)
+	{
+		return;
+	}
+
+	/* ── 转弯 / 直走 ── */
+	if (s_turning)
+	{
+		if (s_turn_tick < TURN_BRAKE_TICK)
+			TB6612_SetSpeed(-200, -200);
+		else if (s_turn_tick < TURN_TOTAL_TICK)
+			TB6612_SetSpeed(-200,  350);
+		else
+		{
+			s_turning = 0U;
+			PID_Reset(&direction_pid);
+			PID_Reset(&speed_loop.left);
+			PID_Reset(&speed_loop.right);
+		}
+		s_turn_tick++;
+	}
+	else
+	{
+		/* 路口检测 */
+		if (g_graySensor.digital_bits[0] == 0U &&
+		    g_graySensor.digital_bits[1] == 0U)
+		{
+			LED_Control(LED2, LED_HIGH);
+			s_turn_db++;
+			if (s_turn_db >= TURN_DEBOUNCE)
+				{ s_turning = 1U; s_turn_tick = 0U; s_turn_db = 0U; }
+		}
+		else { s_turn_db = 0U; }
+
+		LineFollow_Output(actual_left, actual_right);
+	}
 }

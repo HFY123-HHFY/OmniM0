@@ -88,13 +88,13 @@ int main(void)
 	PID_EncoderSpeed_Set(&speed_loop, 1.4f, 35.0f, 0.0f, 20.0f);
 	/*                       		   kp    ki    kd  目标速度    */
 	/* 方向环：线位置 PID，5ms 周期，Out_max=180 留给速度环余量 */
-	Set_PID(&direction_pid, 0.04f, 0.02f, 0.0f);
+	Set_PID(&direction_pid, 0.02f, 0.01f, 0.0f);
 	/*                        kp      ki      kd                   */
 	/*                               Integral_max  Out_max         */
 	LED_Turn(Buzzer1, 200U);				/* 蜂鸣器短鸣 */
 
 /* ── 调试开关：开启/关闭所有 printf ── */
-#define DEBUG_PRINT_ENABLE  1U
+#define DEBUG_PRINT_ENABLE  0U
 /* ── 调试开关：开启/关闭所有 OLED显示 ── */
 #define DEBUG_OLED_ENABLE   1U
 

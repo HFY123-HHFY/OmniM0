@@ -188,8 +188,8 @@ void GrayADC_ReadAllRaw(GrayADC_Sensor_t *sensor)
 
     for (ch = 0U; ch < 8U; ch++)
     {
-        /* 步骤 1：选通当前通道 */
-        GrayADC_SelectChannel(ch);
+        /* 步骤 1：选通当前通道（7-ch 翻转物理顺序） */
+        GrayADC_SelectChannel(7U - ch);
 
         /* 步骤 2：多次采样取均值（8x 过采样 + 均值滤波） */
         sum = 0UL;

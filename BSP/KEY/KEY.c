@@ -18,7 +18,8 @@ static uint8_t Key_Num;
 /* Key：对外暴露的当前最新按键值。
  * 用于主循环或其他模块直接读取按键事件结果。
  */
-uint8_t Key = 0; /* 按键键值 */
+volatile uint8_t Key = 0; /* 按键键值 */
+volatile uint8_t s_target_laps = 0U;
 
 /* 按键扫描内部状态：用于消抖和状态变化检测。 */
 #define KEY_DEBOUNCE_COUNT 3U		   /* 消抖计数 */
@@ -190,7 +191,15 @@ void key_Get(void)
 	if (KeyNum)
 	{
 		Key = KeyNum;
-		KeyNum = 0;
+		// KeyNum = 0;
+	}
+	if (KeyNum == 4U)
+	{
+		s_target_laps++;
+		if (s_target_laps > 5U)
+		{
+			s_target_laps = 1U;
+		}
 	}
 }
 

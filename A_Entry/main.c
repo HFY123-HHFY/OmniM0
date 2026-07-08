@@ -131,6 +131,7 @@ int main(void)
 			// OLED_Printf(0, 16, OLED_8X16, "%.1f  %.1f  %.1f", Pitch, Roll, Yaw);
 			OLED_Printf(0, 16, OLED_8X16, "Dir PID: %.1f", direction_pid.output);
 			OLED_Printf(0, 32, OLED_8X16, "L %d  R %d", Encoder1_Speed, Encoder2_Speed);
+			OLED_Printf(0, 48, OLED_8X16, "N=%d C=%d", Control_GetTargetLaps(), Control_GetIntersectionCount());
 			OLED_Update();
 		#endif
 	}

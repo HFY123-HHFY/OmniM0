@@ -149,40 +149,61 @@ void Direction_Test_Control(void)
  * ══════════════════════════════════════════════════════════════════════ */
 
 /* ── 转弯参数 ── */
-#define TURN_DELAY_MS   30U      /* [调] 看到路口等待多久再转 (ms) */
+#define TURN_DELAY_MS   30U     /* [调] 看到路口等待多久再转 (ms) */
 #define TURN_PIVOT_MS   250U    /* [调] 差速转弯时长 (ms)，决定转多少度 */
 
 /* ↓ 自动换算，不用管 ↓ */
 #define TURN_DELAY_TICK  (TURN_DELAY_MS  / 20U)  /* 等待拍数 */
 #define TURN_PIVOT_TICK  (TURN_PIVOT_MS / 20U)   /* 转弯拍数 */
 
-static uint8_t  s_running    = 0U;  /* 0=停车, 1=运行 */
-static uint8_t  s_delaying   = 0U;  /* 0=正常, 1=路口等待中 */
-static uint8_t  s_turning    = 0U;  /* 0=直走, 1=转弯 */
-static uint16_t s_delay_tick = 0U;  /* 等待时序 (20ms/拍) */
-static uint16_t s_turn_tick  = 0U;  /* 转弯时序 (20ms/拍) */
+#define INTERSECTIONS_PER_LAP  4U    /* 每圈路口数 */
+
+static uint8_t  s_running            = 0U;  /* 0=停车, 1=运行 */
+static uint8_t  s_delaying           = 0U;  /* 0=正常, 1=路口等待中 */
+static uint8_t  s_turning            = 0U;  /* 0=直走, 1=转弯 */
+static uint16_t s_delay_tick         = 0U;  /* 等待时序 (20ms/拍) */
+static uint16_t s_turn_tick          = 0U;  /* 转弯时序 (20ms/拍) */
+
+static uint8_t  s_intersection_count = 0U;  /* 已过路口数 */
+static uint8_t  s_need_white         = 0U;  /* 需先见白才允许下次检测（防重复计数） */
 
 uint8_t Control_IsTurning(void)
 {
 	return s_turning;
 }
 
+uint8_t Control_GetTargetLaps(void)
+{
+	return s_target_laps;
+}
+
+uint8_t Control_GetIntersectionCount(void)
+{
+	return s_intersection_count;
+}
+
 void Control_Run(float actual_left, float actual_right)
 {
 	/* ── 按键 ── */
+	/* KEY2: 启动 */
 	if (Key == 2U && s_running == 0U)
 	{
-		s_running    = 1U;
-		s_delaying   = 0U;
-		s_turning    = 0U;
-		s_delay_tick = 0U;
-		s_turn_tick  = 0U;
+		Key                   = 0U;  /* 消费键值，防止重复触发 */
+		s_running            = 1U;
+		s_delaying           = 0U;
+		s_turning            = 0U;
+		s_delay_tick         = 0U;
+		s_turn_tick          = 0U;
+		s_intersection_count = 0U;
+		s_need_white         = 0U;
 		PID_Reset(&direction_pid);
 		PID_Reset(&speed_loop.left);
 		PID_Reset(&speed_loop.right);
 	}
+	/* KEY3: 停车 */
 	else if (Key == 3U)
 	{
+		Key          = 0U;  /* 消费键值 */
 		s_running    = 0U;
 		s_delaying   = 0U;
 		s_turning    = 0U;
@@ -204,13 +225,23 @@ void Control_Run(float actual_left, float actual_right)
 	{
 		/* 正在转弯 */
 		if (s_turn_tick < TURN_PIVOT_TICK)
+		{
 			TB6612_SetSpeed(-105,  125);
+		}
 		else
 		{
-			s_turning = 0U;
+			s_turning    = 0U;
+			s_need_white = 1U;  /* 转弯结束，必须先见白才允许下次路口检测 */
 			PID_Reset(&direction_pid);
 			PID_Reset(&speed_loop.left);
 			PID_Reset(&speed_loop.right);
+
+			/* 跑完目标圈数 → 停车 */
+			if (s_intersection_count >= s_target_laps * INTERSECTIONS_PER_LAP)
+			{
+				s_running = 0U;
+				TB6612_SetSpeed(0, 0);
+			}
 		}
 		s_turn_tick++;
 	}
@@ -219,19 +250,32 @@ void Control_Run(float actual_left, float actual_right)
 		/* 路口等待中：继续循线，计满拍数后触发转弯 */
 		if (s_delay_tick >= TURN_DELAY_TICK)
 		{
-			s_delaying   = 0U;
-			s_turning    = 1U;
-			s_turn_tick  = 0U;
+			s_delaying = 0U;
+			s_turning  = 1U;
+			s_turn_tick = 0U;
 		}
 		s_delay_tick++;
 		LineFollow_Output(actual_left, actual_right);
 	}
 	else
 	{
-		/* 路口检测：左2路同时见黑 → 进入等待 */
-		if (g_graySensor.digital_bits[0] == 0U &&
-		    g_graySensor.digital_bits[1] == 0U)
+		/*
+		 * 路口检测：左2路同时见黑 → 进入等待。
+		 * s_need_white 防止转弯后立即重复计数同一路口。
+		 */
+		if (s_need_white != 0U)
 		{
+			/* 等传感器回到白色底板 */
+			if (g_graySensor.digital_bits[0] == 1U &&
+			    g_graySensor.digital_bits[1] == 1U)
+			{
+				s_need_white = 0U;
+			}
+		}
+		else if (g_graySensor.digital_bits[0] == 0U &&
+		         g_graySensor.digital_bits[1] == 0U)
+		{
+			s_intersection_count++;
 			s_delaying   = 1U;
 			s_delay_tick = 0U;
 			LED_Control(LED2, LED_HIGH);

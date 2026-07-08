@@ -20,6 +20,9 @@ extern PID_TypeDef direction_pid;
 /* 灰度传感器实例（main.c 定义，Control 层引用） */
 extern GrayADC_Sensor_t g_graySensor;
 
+/* 目标圈数（KEY.c 定义，KEY4 设置，Control 层读取） */
+extern volatile uint8_t s_target_laps;
+
 /* PID 初始化（速度环 + 方向环） */
 void PID_Control_Init(void);
 
@@ -71,6 +74,16 @@ void Control_Run(float actual_left, float actual_right);
  * TIM1 用这个判断是否跳过方向环 PID。
  */
 uint8_t Control_IsTurning(void);
+
+/*
+ * Control_GetTargetLaps — 返回目标圈数 (1-5)。
+ */
+uint8_t Control_GetTargetLaps(void);
+
+/*
+ * Control_GetIntersectionCount — 返回已过路口数。
+ */
+uint8_t Control_GetIntersectionCount(void);
 
 #ifdef __cplusplus
 }

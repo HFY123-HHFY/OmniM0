@@ -56,11 +56,11 @@ int main(void)
 /* 初始化层：初始化相关外设，启动硬件功能 */
 	API_USART_Init(API_USART1, 115200U); // 初始化 USART1，波特率 115200
 	API_USART_Init(API_USART2, 115200U); // 初始化 USART2，波特率 115200
-	// API_USART_Init(API_USART3, 115200U); // 初始化 USART3，波特率 115200
+	API_USART_Init(API_USART3, 115200U); // 初始化 USART3，波特率 115200
 	API_PWM_Init(API_PWM_TIM1, 400U - 1U, 8U - 1U); /* 10kHz */
 	API_ADC_Init(API_ADC1); // 初始化 ADC1
-	API_TIM_Init(API_TIM1, 1U); /* TIM1: PID 节拍，每 1ms */
-	API_TIM_Init(API_TIM2, 1U); /* TIM2: 编码器节拍，每 1ms（每 20ms 快照） */
+	API_TIM_Init(API_TIM1, 1U); /* TIM1: PID 节拍， 每 1ms */
+	API_TIM_Init(API_TIM2, 1U); /* TIM2: 编码器节拍，每 1ms*/
 
 /* 通信协议初始化 */
 	API_I2C_Init();						/* 软件 I2C 初始化 */
@@ -88,13 +88,14 @@ int main(void)
 	PID_EncoderSpeed_Set(&speed_loop, 1.4f, 35.0f, 0.0f, 20.0f);
 	/*                       		   kp    ki    kd  目标速度    */
 	/* 方向环：线位置 PID，5ms 周期，Out_max=180 留给速度环余量 */
-	Set_PID(&direction_pid, 0.02f, 0.01f, 0.0f);
+	// Set_PID(&direction_pid, 0.02f, 0.01f, 0.0f);
+	Set_PID(&direction_pid, 0.025f, 0.00f, 0.005f);
 	/*                        kp      ki      kd                   */
 	/*                               Integral_max  Out_max         */
 	LED_Turn(Buzzer1, 200U);				/* 蜂鸣器短鸣 */
 
 /* ── 调试开关：开启/关闭所有 printf ── */
-#define DEBUG_PRINT_ENABLE  0U
+#define DEBUG_PRINT_ENABLE  1U
 /* ── 调试开关：开启/关闭所有 OLED显示 ── */
 #define DEBUG_OLED_ENABLE   1U
 
@@ -119,12 +120,12 @@ int main(void)
 				print_task_flag = 0U;
 				// usart_printf(USART1, "key: %lu\r\n", Key);
 				// usart_printf(USART1, "Pitch=%.2f Roll=%.2f Yaw=%.2f\r\n", Pitch, Roll, Yaw);
-				GrayADC_PrintLinePos(&g_graySensor, USART2);
+				GrayADC_PrintLinePos(&g_graySensor, USART3);
 			}
 		#endif
 
 /* OLED数据打印 */
-		#if (DEBUG_OLED_ENABLE == 1U)
+		#if (DEBUG_OLED_ENABLE == 1U) 
 			OLED_Clear();
 			OLED_Printf(0, 0, OLED_8X16, "%d", Timer_Bsp_t);
 			OLED_Printf(64, 0, OLED_8X16, "%d", Key);

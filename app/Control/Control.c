@@ -148,14 +148,12 @@ void Direction_Test_Control(void)
  * Control_Run — 所有循线控制逻辑的入口
  * ══════════════════════════════════════════════════════════════════════ */
 
-#define TURN_BRAKE_MS   5U   /* 刹车时长：发现路口后双轮急刹多久，杀前进惯量 */
-#define TURN_PIVOT_MS   150U   /* 差速转弯时长：逆时针 pivot 多久，决定转的角度 */
-#define TURN_DEBOUNCE   1U     /* 路口去抖拍数：连续多少拍(20ms/拍)左2路见黑才触发 */
+/* ── 转弯参数 ── */
+#define TURN_PIVOT_MS   250U   /* [调] 差速转弯时长 (ms)，决定转多少度 */
+#define TURN_DEBOUNCE   1U     /* [调] 路口去抖拍数 (20ms/拍) */
 
-/* ↓ 以下由上面 3 个自动算出，不用改 ↓ */
-#define TURN_BRAKE_TICK (TURN_BRAKE_MS  / 20U)  /* 刹车拍数 (1拍=20ms) */
-#define TURN_PIVOT_TICK (TURN_PIVOT_MS  / 20U)  /* 差速转弯拍数 */
-#define TURN_TOTAL_TICK (TURN_BRAKE_TICK + TURN_PIVOT_TICK)  /* 总拍数：刹完转到此值退出 */
+/* ↓ 自动换算，不用管 ↓ */
+#define TURN_PIVOT_TICK (TURN_PIVOT_MS / 20U)  /* 转弯拍数 */
 
 static uint8_t  s_running   = 0U;  /* 0=停车, 1=运行 */
 static uint8_t  s_turning   = 0U;  /* 0=直走, 1=转弯 */
@@ -198,10 +196,8 @@ void Control_Run(float actual_left, float actual_right)
 	/* ── 转弯 / 直走 ── */
 	if (s_turning)
 	{
-		if (s_turn_tick < TURN_BRAKE_TICK)
-			TB6612_SetSpeed(-200, -200);
-		else if (s_turn_tick < TURN_TOTAL_TICK)
-			TB6612_SetSpeed(-200,  350);
+		if (s_turn_tick < TURN_PIVOT_TICK)
+			TB6612_SetSpeed(-115,  155);
 		else
 		{
 			s_turning = 0U;
@@ -222,8 +218,11 @@ void Control_Run(float actual_left, float actual_right)
 			if (s_turn_db >= TURN_DEBOUNCE)
 				{ s_turning = 1U; s_turn_tick = 0U; s_turn_db = 0U; }
 		}
-		else { s_turn_db = 0U; }
-
+		else 
+		{
+			 s_turn_db = 0U; 
+			LED_Control(LED2, LED_LOW);
+		}
 		LineFollow_Output(actual_left, actual_right);
 	}
 }

@@ -28,25 +28,13 @@ extern "C" {
 #define GRAY_ADC_POSITION_SMOOTHING  4U
 
 /*===========================================================================
- * 运行模式切换
- *===========================================================================*/
-/*
- * 1 = 校准模式：仅采集原始 ADC 值到 raw_value，不做二值化/归一化。
- *              用户通过串口读取 raw_value，确定 white/black 校准值。
- * 0 = 正常模式：使用校准参数，输出二值化(digital)和归一化(normalized)结果。
- */
-#define GRAY_ADC_CALIBRATION_MODE  0U
-
-/*===========================================================================
- * 校准参数（GRAY_ADC_CALIBRATION_MODE == 0 时使用）
+ * 校准参数
  *===========================================================================*/
 /*
  * 校准流程：
- *   1. 将 GRAY_ADC_CALIBRATION_MODE 改为 1，编译烧录
- *   2. 传感器放在**白色/浅色**区域，记录串口输出的 8 路 raw_value
- *   3. 传感器放在**黑色/深色**区域，记录串口输出的 8 路 raw_value
- *   4. 将记录的值填入下方两个数组，将 GRAY_ADC_CALIBRATION_MODE 改回 0
- *   5. 重新编译烧录，正常使用
+ *   1. 传感器放在**白色/浅色**区域，用 GrayADC_PrintRaw() 打印 8 路 raw_value
+ *   2. 传感器放在**黑色/深色**区域，用 GrayADC_PrintRaw() 打印 8 路 raw_value
+ *   3. 将记录的值填入下方两个数组，重新编译烧录即可
  *
  * 注意：如果未调用 GrayADC_InitSensor()，驱动会在首次 Task 时自动使用默认值。
  */
@@ -141,11 +129,8 @@ void GrayADC_InitSensor(GrayADC_Sensor_t *sensor,
 /*
  * 传感器主任务（每个控制周期调用一次）。
  *
- * 校准模式 (GRAY_ADC_CALIBRATION_MODE == 1)：
- *   仅采集 raw_value，用户通过串口打印观察。
- *
- * 正常模式 (GRAY_ADC_CALIBRATION_MODE == 0)：
- *   采集 raw_value → 二值化 → 归一化，完整输出。
+ * 完整流程：采集 raw_value → 二值化 → 归一化。
+ * 如果尚未调用 GrayADC_InitSensor()，自动使用默认校准值初始化一次。
  */
 void GrayADC_Task(GrayADC_Sensor_t *sensor);
 

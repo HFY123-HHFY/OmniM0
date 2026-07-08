@@ -409,14 +409,8 @@ static void GrayADC_Normalize(GrayADC_Sensor_t *sensor)
 /*
  * 传感器主任务 — 每个控制周期调用一次。
  *
- * 校准模式 (GRAY_ADC_CALIBRATION_MODE == 1)：
- *   - 仅采集原始 ADC 值到 raw_value[]
- *   - 不做二值化和归一化
- *   - 用户通过串口读取 raw_value 来观察数据、确定 calib_white/calib_black
- *
- * 正常模式 (GRAY_ADC_CALIBRATION_MODE == 0)：
- *   - 完整流程：采集 → 二值化 → 归一化
- *   - 如果尚未调用 GrayADC_InitSensor()，自动使用默认校准值初始化一次
+ * 完整流程：采集 raw_value → 二值化 → 归一化。
+ * 如果尚未调用 GrayADC_InitSensor()，自动使用默认校准值初始化一次。
  */
 void GrayADC_Task(GrayADC_Sensor_t *sensor)
 {
@@ -427,20 +421,6 @@ void GrayADC_Task(GrayADC_Sensor_t *sensor)
 
     /* ── 第 1 步：采集 8 路原始 ADC ── */
     GrayADC_ReadAllRaw(sensor);
-
-#if GRAY_ADC_CALIBRATION_MODE == 1U
-    /*
-     * 校准模式：仅采集原始值。
-     * 用户可通过 sensor->raw_value 观察并确定校准参数。
-     * 在 main.c 中用 usart_printf 打印 raw_value 即可：
-     *
-     *   usart_printf(USART1, "R:%d %d %d %d %d %d %d %d\r\n",
-     *       sensor.raw_value[0], sensor.raw_value[1], ...);
-     */
-#else
-    /*
-     * 正常模式：二值化 + 归一化
-     */
 
     /* 首次进入且未手动校准 → 使用宏定义的默认校准值 */
     if (sensor->calib_ready == 0U)
@@ -453,7 +433,6 @@ void GrayADC_Task(GrayADC_Sensor_t *sensor)
 
     /* ── 第 3 步：归一化 ── */
     GrayADC_Normalize(sensor);
-#endif
 }
 
 /*===========================================================================

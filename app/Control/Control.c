@@ -149,16 +149,18 @@ void Direction_Test_Control(void)
  * ══════════════════════════════════════════════════════════════════════ */
 
 /* ── 转弯参数 ── */
-#define TURN_PIVOT_MS   250U   /* [调] 差速转弯时长 (ms)，决定转多少度 */
-#define TURN_DEBOUNCE   1U     /* [调] 路口去抖拍数 (20ms/拍) */
+#define TURN_DELAY_MS   30U      /* [调] 看到路口等待多久再转 (ms) */
+#define TURN_PIVOT_MS   250U    /* [调] 差速转弯时长 (ms)，决定转多少度 */
 
 /* ↓ 自动换算，不用管 ↓ */
-#define TURN_PIVOT_TICK (TURN_PIVOT_MS / 20U)  /* 转弯拍数 */
+#define TURN_DELAY_TICK  (TURN_DELAY_MS  / 20U)  /* 等待拍数 */
+#define TURN_PIVOT_TICK  (TURN_PIVOT_MS / 20U)   /* 转弯拍数 */
 
-static uint8_t  s_running   = 0U;  /* 0=停车, 1=运行 */
-static uint8_t  s_turning   = 0U;  /* 0=直走, 1=转弯 */
-static uint8_t  s_turn_db   = 0U;  /* 去抖计数 */
-static uint16_t s_turn_tick = 0U;  /* 转弯时序 (20ms/拍) */
+static uint8_t  s_running    = 0U;  /* 0=停车, 1=运行 */
+static uint8_t  s_delaying   = 0U;  /* 0=正常, 1=路口等待中 */
+static uint8_t  s_turning    = 0U;  /* 0=直走, 1=转弯 */
+static uint16_t s_delay_tick = 0U;  /* 等待时序 (20ms/拍) */
+static uint16_t s_turn_tick  = 0U;  /* 转弯时序 (20ms/拍) */
 
 uint8_t Control_IsTurning(void)
 {
@@ -170,18 +172,22 @@ void Control_Run(float actual_left, float actual_right)
 	/* ── 按键 ── */
 	if (Key == 2U && s_running == 0U)
 	{
-		s_running = 1U;
-		s_turning = 0U;
-		s_turn_db = s_turn_tick = 0U;
+		s_running    = 1U;
+		s_delaying   = 0U;
+		s_turning    = 0U;
+		s_delay_tick = 0U;
+		s_turn_tick  = 0U;
 		PID_Reset(&direction_pid);
 		PID_Reset(&speed_loop.left);
 		PID_Reset(&speed_loop.right);
 	}
 	else if (Key == 3U)
 	{
-		s_running = 0U;
-		s_turning = 0U;
-		s_turn_db = s_turn_tick = 0U;
+		s_running    = 0U;
+		s_delaying   = 0U;
+		s_turning    = 0U;
+		s_delay_tick = 0U;
+		s_turn_tick  = 0U;
 		TB6612_SetSpeed(0, 0);
 		PID_Reset(&direction_pid);
 		PID_Reset(&speed_loop.left);
@@ -193,11 +199,12 @@ void Control_Run(float actual_left, float actual_right)
 		return;
 	}
 
-	/* ── 转弯 / 直走 ── */
+	/* ── 转弯 / 等待 / 直走 ── */
 	if (s_turning)
 	{
+		/* 正在转弯 */
 		if (s_turn_tick < TURN_PIVOT_TICK)
-			TB6612_SetSpeed(-115,  155);
+			TB6612_SetSpeed(-105,  125);
 		else
 		{
 			s_turning = 0U;
@@ -207,20 +214,30 @@ void Control_Run(float actual_left, float actual_right)
 		}
 		s_turn_tick++;
 	}
+	else if (s_delaying)
+	{
+		/* 路口等待中：继续循线，计满拍数后触发转弯 */
+		if (s_delay_tick >= TURN_DELAY_TICK)
+		{
+			s_delaying   = 0U;
+			s_turning    = 1U;
+			s_turn_tick  = 0U;
+		}
+		s_delay_tick++;
+		LineFollow_Output(actual_left, actual_right);
+	}
 	else
 	{
-		/* 路口检测 */
+		/* 路口检测：左2路同时见黑 → 进入等待 */
 		if (g_graySensor.digital_bits[0] == 0U &&
 		    g_graySensor.digital_bits[1] == 0U)
 		{
+			s_delaying   = 1U;
+			s_delay_tick = 0U;
 			LED_Control(LED2, LED_HIGH);
-			s_turn_db++;
-			if (s_turn_db >= TURN_DEBOUNCE)
-				{ s_turning = 1U; s_turn_tick = 0U; s_turn_db = 0U; }
 		}
-		else 
+		else
 		{
-			 s_turn_db = 0U; 
 			LED_Control(LED2, LED_LOW);
 		}
 		LineFollow_Output(actual_left, actual_right);

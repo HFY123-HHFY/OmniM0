@@ -89,7 +89,7 @@ int main(void)
 	/*                       		   kp    ki    kd  目标速度    */
 	/* 方向环：线位置 PID，5ms 周期，Out_max=180 留给速度环余量 */
 	// Set_PID(&direction_pid, 0.02f, 0.01f, 0.0f);
-	Set_PID(&direction_pid, 0.025f, 0.0001f, 0.005f);
+	Set_PID(&direction_pid, 0.035f, 0.0001f, 0.005f);
 	/*                        kp      ki      kd                   */
 	/*                               Integral_max  Out_max         */
 	LED_Turn(Buzzer1, 200U);				/* 蜂鸣器短鸣 */
@@ -101,7 +101,6 @@ int main(void)
 
 	while (1)
 	{
-		LED_Control(LED1, LED_HIGH);
 		/* MPU6050 DMP */
 		if (mpu_flag == 1U)
 		{
@@ -110,7 +109,6 @@ int main(void)
 			// MPU_Get_Gyroscope(&gyrox, &gyroy, &gyroz);
 			/* MPU_Get_Accelerometer(&aacx, &aacy, &aacz); */
 		}
-
 		/* KEY 控制*/
 		key_Get();
 

@@ -106,8 +106,23 @@ void G3507_USART_Init(uint8_t usartId, uint32_t baudRate)
 	DL_UART_Main_configBaudRate(map.regs, uartClockHz, baudRate);
 
 	DL_UART_Main_enableInterrupt(map.regs, DL_UART_MAIN_INTERRUPT_RX);
+		/*
+		 * RX FIFO 阈值设为 1 字节 — 每收到 1 个字节立即触发中断。
+		 * 默认值（1/2 满 = 2 字节）会导致帧尾字节卡在 FIFO 里，
+		 * 严重拖慢 JY61P 等连续数据流传感器的响应速度。
+		 */
+		DL_UART_Main_setRXFIFOThreshold(map.regs,
+		                                DL_UART_MAIN_RX_FIFO_LEVEL_ONE_ENTRY);
 	DL_UART_Main_enable(map.regs);
-	NVIC_SetPriority(map.irq, IRQ_PRIO_USART);
+/* 根据 USART 实例选择优先级：USART3(2U)→PRIO 2, 其余→PRIO 3 */
+		{
+			uint32_t prio = IRQ_PRIO_DEFAULT;
+			if (usartId == 2U)      { prio = IRQ_PRIO_USART3; } /* JY61P */
+			else if (usartId == 0U) { prio = IRQ_PRIO_USART1; } /* 调试 */
+			else if (usartId == 1U) { prio = IRQ_PRIO_USART2; }
+			else if (usartId == 3U) { prio = IRQ_PRIO_USART4; }
+			NVIC_SetPriority(map.irq, prio);
+		}
 	NVIC_EnableIRQ(map.irq);
 }
 

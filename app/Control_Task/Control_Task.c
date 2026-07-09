@@ -7,6 +7,7 @@
 #include "KEY.h"
 #include "Encoder.h"
 #include "gray_adc.h"
+#include "jy61p.h"
 
 volatile uint8_t print_task_flag = 0;
 uint32_t Timer_Bsp_t = 0;
@@ -81,19 +82,30 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
 {
 	uint32_t data;
 	uint8_t rxValid;
-	data = 0U;
-	rxValid = 0U;
-	usart_irq_dispatch_by_id(id, &data, &rxValid);
-	if (rxValid != 0U)
+
+	/*
+	 * 循环排空 RX FIFO：MSPM0 的 UART 有 4 字节 FIFO，中断按阈值触发，
+	 * 不是逐字节触发。必须一次中断把所有可用字节读干净，否则数据堆积→卡顿。
+	 */
+	do
 	{
-		if (id == API_USART1)
+		data    = 0U;
+		rxValid = 0U;
+		usart_irq_dispatch_by_id(id, &data, &rxValid);
+		if (rxValid != 0U)
 		{
-			usart_Dispose_Data(USART1, &USART_DataTypeStruct, (uint8_t)data);
+			if (id == API_USART3)
+			{
+				JY61P_RxPush((uint8_t)data);  /* 只入队，解析交给主循环 JY61P_Task() */
+			}
+			// if (id == API_USART1)
+			// {
+			// 	usart_Dispose_Data(USART1, &USART_DataTypeStruct, (uint8_t)data);
+			// }
+			// else if (id == API_USART3)
+			// {
+			// 	JY61P_FeedByte_Angle((uint8_t)data);
+			// }
 		}
-		else if (id == API_USART4)
-		{
-			usart_printf(USART4, "data: %d\r\n", data);
-			// usart_Dispose_Data(USART3, &USART_DataTypeStruct, (uint8_t)data);
-		}
-	}
+	} while (rxValid != 0U);
 }

@@ -154,7 +154,13 @@ void G3507_TIM_PeriodicInit(uint8_t timId, uint32_t periodMs)
 	DL_TimerG_clearInterruptStatus(map.regs, G3507_TIM_ISR_MASK);
 	DL_TimerG_enableInterrupt(map.regs, G3507_TIM_ISR_MASK);
 	NVIC_ClearPendingIRQ(map.irq);
-	NVIC_SetPriority(map.irq, IRQ_PRIO_TIM_CTRL);
+/* 根据 TIM 实例选择优先级：TIM1(0U)→PRIO 0, TIM2(1U)→PRIO 1 */
+		{
+			uint32_t prio = IRQ_PRIO_TIM_DEFAULT;
+			if (timId == 0U)      { prio = IRQ_PRIO_TIM1; }
+			else if (timId == 1U) { prio = IRQ_PRIO_TIM2; }
+			NVIC_SetPriority(map.irq, prio);
+		}
 	NVIC_EnableIRQ(map.irq);
 }
 

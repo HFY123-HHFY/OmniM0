@@ -29,6 +29,7 @@
 #include "Control.h"
 #include "TB6612.h"
 #include "gray_adc.h"
+#include "jy61p.h"
 
 int main(void)
 {
@@ -80,6 +81,7 @@ int main(void)
 	// Enroll_MPU6050_Register();				/* MPU6050 INT 资源注册（DMP 初始化后才能使能 EXTI） */
 
 	GrayADC_Init();							/* GrayADC 灰度传感器初始化（地址引脚） */
+	JY61P_Init();							/* JY61P 陀螺仪数据结构初始化 */
 	TB6612_Init(); 							/* TB6612 电机驱动初始化 */
 	API_Encoder_Init(API_ENCODER_1); 		/* 编码器 1 初始化 */
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
@@ -98,10 +100,17 @@ int main(void)
 /* ── 调试开关：开启/关闭所有 printf ── */
 #define DEBUG_PRINT_ENABLE  1U
 /* ── 调试开关：开启/关闭所有 OLED显示 ── */
-#define DEBUG_OLED_ENABLE   1U
+#define DEBUG_OLED_ENABLE   0U
+
+float roll, pitch, yaw;
 
 	while (1)
 	{
+		// const JY61P_Data_t *jy = JY61P_GetData();
+
+		JY61P_Task();  /* 处理已缓冲的 JY61P 字节 */
+		JY61P_GetAngle(&roll, &pitch, &yaw);
+
 		/* KEY 控制*/
 		key_Get();
 
@@ -110,8 +119,17 @@ int main(void)
 			if (print_task_flag != 0U)
 			{
 				print_task_flag = 0U;
-				usart_printf(USART4, "key: %lu\r\n", Key);
+				// usart_printf(USART1, "key: %lu\r\n", Key);
 				// GrayADC_PrintLinePos(&g_graySensor, USART2);
+
+				// usart_printf(USART2, "Acc:  %.2f %.2f %.2f\r\n",
+				//              jy->acc_x, jy->acc_y, jy->acc_z);
+				// usart_printf(USART2, "Gyro: %.1f %.1f %.1f\r\n",
+				//              jy->gyro_x, jy->gyro_y, jy->gyro_z);
+				// usart_printf(USART1, "Angle:%.1f %.1f %.1f\r\n",
+				// 				jy->roll, jy->pitch, jy->yaw);
+				usart_printf(USART1, "Angle:%.3f %.3f %.3f\r\n",
+								roll, pitch, yaw);
 			}
 		#endif
 

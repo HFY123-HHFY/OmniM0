@@ -85,7 +85,7 @@ int main(void)
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
 
 	/* 速度环：左右轮各自 PID，20ms 周期，输出限幅 = TB6612_MAX_DUTY */
-	PID_EncoderSpeed_Set(&speed_loop, 1.4f, 35.0f, 0.0f, 20.0f);
+	PID_EncoderSpeed_Set(&speed_loop, 1.4f, 35.0f, 0.0f, 22.0f);
 	/*                       		   kp    ki    kd  目标速度    */
 	/* 方向环：线位置 PID，5ms 周期，Out_max=180 留给速度环余量 */
 	// Set_PID(&direction_pid, 0.02f, 0.01f, 0.0f);
@@ -95,7 +95,7 @@ int main(void)
 	LED_Turn(Buzzer1, 200U);				/* 蜂鸣器短鸣 */
 
 /* ── 调试开关：开启/关闭所有 printf ── */
-#define DEBUG_PRINT_ENABLE  1U
+#define DEBUG_PRINT_ENABLE  0U
 /* ── 调试开关：开启/关闭所有 OLED显示 ── */
 #define DEBUG_OLED_ENABLE   1U
 
@@ -105,7 +105,8 @@ int main(void)
 		if (mpu_flag == 1U)
 		{
 			mpu_flag = 0U;
-			// mpu_dmp_get_data(&Pitch, &Roll, &Yaw); 
+			// mpu_dmp_get_data(&Pitch, &Roll, &Yaw);  
+
 			// MPU_Get_Gyroscope(&gyrox, &gyroy, &gyroz);
 			/* MPU_Get_Accelerometer(&aacx, &aacy, &aacz); */
 		}

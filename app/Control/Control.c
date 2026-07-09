@@ -149,8 +149,8 @@ void Direction_Test_Control(void)
  * ══════════════════════════════════════════════════════════════════════ */
 
 /* ── 转弯参数 ── */
-#define TURN_DELAY_MS   30U     /* [调] 看到路口等待多久再转 (ms) */
-#define TURN_PIVOT_MS   250U    /* [调] 差速转弯时长 (ms)，决定转多少度 */
+#define TURN_DELAY_MS   30U     /* 看到路口等待多久再转 (ms) */
+#define TURN_PIVOT_MS   250U    /* 差速转弯时长 (ms)，决定转多少度 */
 
 /* ↓ 自动换算，不用管 ↓ */
 #define TURN_DELAY_TICK  (TURN_DELAY_MS  / 20U)  /* 等待拍数 */
@@ -188,7 +188,7 @@ void Control_Run(float actual_left, float actual_right)
 	/* KEY2: 启动 */
 	if (Key == 2U && s_running == 0U)
 	{
-		Key                   = 0U;  /* 消费键值，防止重复触发 */
+		Key                  = 0U;  /* 消费键值，防止重复触发 */
 		s_running            = 1U;
 		s_delaying           = 0U;
 		s_turning            = 0U;

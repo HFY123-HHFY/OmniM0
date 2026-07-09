@@ -17,6 +17,7 @@ typedef enum
 	API_USART1 = 1U,
 	API_USART2 = 2U,
 	API_USART3 = 3U,
+	API_USART4 = 4U,
 } API_USART_Id_t;
 
 #define API_USART_CORE_UART0   (0U)

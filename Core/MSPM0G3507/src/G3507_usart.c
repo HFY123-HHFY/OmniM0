@@ -7,6 +7,8 @@
 #include "ti/driverlib/dl_uart_main.h"
 #include "ti/devices/msp/m0p/mspm0g350x.h"
 
+#define G3507_USART_CORE_UART3 (3U)
+
 typedef struct
 {
 	UART_Regs *regs;
@@ -45,12 +47,27 @@ static G3507_USART_Map_t G3507_USART_GetMap(uint8_t usartId)
 	return map;
 }
 
+/*
+ * UART 波特率分频输入时钟选择：
+ * - UART0/1/2 位于 PD0，沿用 BusClk(当前工程下约为 MCLK/2)；
+ * - UART3 位于 PD1，其功能时钟与 PD0 不同，按 MCLK 计算波特率。
+ */
+static uint32_t G3507_USART_GetFunctionalClockHz(uint8_t usartId)
+{
+	if (usartId == G3507_USART_CORE_UART3)
+	{
+		return G3507_SYS_GetMclkHz();
+	}
+
+	return G3507_SYS_GetBusClkHz();
+}
+
 void G3507_USART_Init(uint8_t usartId, uint32_t baudRate)
 {
 	G3507_USART_Map_t map;
 	DL_UART_Main_ClockConfig clockConfig;
 	DL_UART_Main_Config uartConfig;
-	uint32_t busClkHz;
+	uint32_t uartClockHz;
 
 	map = G3507_USART_GetMap(usartId);
 	if ((map.regs == 0) || (baudRate == 0UL))
@@ -81,12 +98,12 @@ void G3507_USART_Init(uint8_t usartId, uint32_t baudRate)
 	uartConfig.stopBits = DL_UART_MAIN_STOP_BITS_ONE;
 	DL_UART_Main_init(map.regs, &uartConfig);
 
-	busClkHz = G3507_SYS_GetBusClkHz();
-	if (busClkHz == 0UL)
+	uartClockHz = G3507_USART_GetFunctionalClockHz(usartId);
+	if (uartClockHz == 0UL)
 	{
-		busClkHz = 32000000UL;
+		uartClockHz = 32000000UL;
 	}
-	DL_UART_Main_configBaudRate(map.regs, busClkHz, baudRate);
+	DL_UART_Main_configBaudRate(map.regs, uartClockHz, baudRate);
 
 	DL_UART_Main_enableInterrupt(map.regs, DL_UART_MAIN_INTERRUPT_RX);
 	DL_UART_Main_enable(map.regs);

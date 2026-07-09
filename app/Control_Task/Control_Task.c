@@ -90,5 +90,10 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
 		{
 			usart_Dispose_Data(USART1, &USART_DataTypeStruct, (uint8_t)data);
 		}
+		else if (id == API_USART4)
+		{
+			usart_printf(USART4, "data: %d\r\n", data);
+			// usart_Dispose_Data(USART3, &USART_DataTypeStruct, (uint8_t)data);
+		}
 	}
 }

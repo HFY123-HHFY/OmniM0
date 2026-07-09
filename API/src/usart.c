@@ -7,7 +7,7 @@
 
 static const API_USART_Config_t *s_usartTable;
 static uint8_t s_usartCount;
-static API_USART_IrqHandler_t s_usartIrqHandlers[API_USART3 + 1U];
+static API_USART_IrqHandler_t s_usartIrqHandlers[API_USART4 + 1U];
 
 static uint8_t API_USART_GetG3507Pinmux(
 	API_USART_Id_t id, uint8_t isTx, uint32_t *iomux, uint32_t *func)
@@ -53,6 +53,18 @@ static uint8_t API_USART_GetG3507Pinmux(
 		{
 			*iomux = G3507_USART2_RX_IOMUX;
 			*func = G3507_USART2_RX_FUNC;
+		}
+		return 1U;
+	case API_USART4:
+		if (isTx != 0U)
+		{
+			*iomux = G3507_USART3_TX_IOMUX;
+			*func = G3507_USART3_TX_FUNC;
+		}
+		else
+		{
+			*iomux = G3507_USART3_RX_IOMUX;
+			*func = G3507_USART3_RX_FUNC;
 		}
 		return 1U;
 	default:
@@ -142,7 +154,7 @@ void API_USART_Register(const API_USART_Config_t *configTable, uint8_t count)
 
 void API_USART_RegisterIrqHandler(API_USART_Id_t id, API_USART_IrqHandler_t handler)
 {
-	if ((id < API_USART1) || (id > API_USART3))
+	if ((id < API_USART1) || (id > API_USART4))
 	{
 		return;
 	}
@@ -202,7 +214,7 @@ void API_USART_HandleIrqByCoreId(uint8_t coreId)
 		return;
 	}
 
-	if ((config->id < API_USART1) || (config->id > API_USART3))
+	if ((config->id < API_USART1) || (config->id > API_USART4))
 	{
 		return;
 	}

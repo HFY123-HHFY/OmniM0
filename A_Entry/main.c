@@ -56,7 +56,8 @@ int main(void)
 /* 初始化层：初始化相关外设，启动硬件功能 */
 	API_USART_Init(API_USART1, 115200U); // 初始化 USART1，波特率 115200
 	API_USART_Init(API_USART2, 115200U); // 初始化 USART2，波特率 115200
-	API_USART_Init(API_USART3, 115200U); // 初始化 USART3，波特率 115200
+	API_USART_Init(API_USART3, 9600U); // 初始化 USART3，波特率 9600
+	API_USART_Init(API_USART4, 9600U); // 初始化 USART4，波特率 9600
 	API_PWM_Init(API_PWM_TIM1, 400U - 1U, 8U - 1U); /* 10kHz */
 	API_ADC_Init(API_ADC1); // 初始化 ADC1
 	API_TIM_Init(API_TIM1, 1U); /* TIM1: PID 节拍， 每 1ms */
@@ -95,21 +96,12 @@ int main(void)
 	LED_Turn(Buzzer1, 200U);				/* 蜂鸣器短鸣 */
 
 /* ── 调试开关：开启/关闭所有 printf ── */
-#define DEBUG_PRINT_ENABLE  0U
+#define DEBUG_PRINT_ENABLE  1U
 /* ── 调试开关：开启/关闭所有 OLED显示 ── */
 #define DEBUG_OLED_ENABLE   1U
 
 	while (1)
 	{
-		/* MPU6050 DMP */
-		if (mpu_flag == 1U)
-		{
-			mpu_flag = 0U;
-			// mpu_dmp_get_data(&Pitch, &Roll, &Yaw);  
-
-			// MPU_Get_Gyroscope(&gyrox, &gyroy, &gyroz);
-			/* MPU_Get_Accelerometer(&aacx, &aacy, &aacz); */
-		}
 		/* KEY 控制*/
 		key_Get();
 
@@ -118,9 +110,8 @@ int main(void)
 			if (print_task_flag != 0U)
 			{
 				print_task_flag = 0U;
-				// usart_printf(USART1, "key: %lu\r\n", Key);
-				// usart_printf(USART1, "Pitch=%.2f Roll=%.2f Yaw=%.2f\r\n", Pitch, Roll, Yaw);
-				GrayADC_PrintLinePos(&g_graySensor, USART3);
+				usart_printf(USART4, "key: %lu\r\n", Key);
+				// GrayADC_PrintLinePos(&g_graySensor, USART2);
 			}
 		#endif
 

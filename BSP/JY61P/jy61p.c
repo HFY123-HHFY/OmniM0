@@ -23,6 +23,8 @@
  */
 
 #include "jy61p.h"
+#include "My_Usart/My_Usart.h"  /* usart_send_byte / USART3 */
+#include "Delay.h"              /* Delay_ms                 */
 
 /*===========================================================================
  * 环形缓冲区
@@ -127,7 +129,7 @@ void JY61P_RxPush(uint8_t data)
  *   JY61P_TYPE_GYRO  (0x52) — 仅解析角速度
  *   0U                         — 解析全部
  */
-static uint8_t s_activeType = JY61P_TYPE_ANGLE;  /* 选择需要解析的数据包 */
+static uint8_t s_activeType = 0;  /* 选择需要解析的数据包 */
 
 void JY61P_SetActiveType(uint8_t packetType)
 {
@@ -271,3 +273,64 @@ float JY61P_GetTemp(void)
 {
     return s_data.temp;
 }
+
+/*===========================================================================
+ * 写操作（配置指令）
+ *
+ * JY61P 指令协议：
+ *   帧格式：0xFF 0xAA ADDR DATAL DATAH（5 字节固定，无校验和）
+ *   流程：解锁 → 延时 → 发指令 → 延时 → 保存
+ *
+ * 注意：
+ *   - 所有数据均为 16 进制原始字节，不是 ASCII
+ *   - 带长延时的函数会阻塞当前线程（通常在主循环初始化阶段调用一次即可）
+ *===========================================================================*/
+
+/* ── 指令常量 ── */
+#define JY61P_CMD_HEADER1  0xFFU
+#define JY61P_CMD_HEADER2  0xAAU
+#define JY61P_REG_SAVE     0x00U   /* 保存寄存器        */
+#define JY61P_REG_CALIB    0x01U   /* 校准寄存器        */
+#define JY61P_REG_UNLOCK   0x69U   /* 解锁寄存器        */
+#define JY61P_UNLOCK_VAL   0xB588U /* 解锁魔数          */
+
+/* ── 发送 5 字节指令包 ── */
+static void JY61P_SendCmd(uint8_t addr, uint16_t data)
+{
+    usart_send_byte(USART3, JY61P_CMD_HEADER1);
+    usart_send_byte(USART3, JY61P_CMD_HEADER2);
+    usart_send_byte(USART3, addr);
+    usart_send_byte(USART3, (uint8_t)(data & 0xFFU));          /* DATAL */
+    usart_send_byte(USART3, (uint8_t)((data >> 8) & 0xFFU));   /* DATAH */
+}
+
+/* ── 解锁 ── */
+static void JY61P_Unlock(void)
+{
+    JY61P_SendCmd(JY61P_REG_UNLOCK, JY61P_UNLOCK_VAL);
+}
+
+/* ── 保存 ── */
+static void JY61P_Save(void)
+{
+    JY61P_SendCmd(JY61P_REG_SAVE, 0x0000U);
+}
+
+/*===========================================================================
+ * JY61P_ZAxisZero — Z 轴（偏航角）置零
+ *
+ * 需要六轴算法（上位机可切换）。
+ * 九轴算法下为绝对角度，不能归零。
+ * 阻塞约 3.5 秒。
+ *===========================================================================*/
+void JY61P_ZAxisZero(void)
+{
+    JY61P_Unlock();
+    Delay_ms(200U);
+
+    JY61P_SendCmd(JY61P_REG_CALIB, 0x0004U);  /* Z 轴归零 */
+    Delay_ms(3000U);
+
+    JY61P_Save();
+}
+

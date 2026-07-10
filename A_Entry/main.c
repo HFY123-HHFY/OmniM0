@@ -57,7 +57,7 @@ int main(void)
 /* 初始化层：初始化相关外设，启动硬件功能 */
 	API_USART_Init(API_USART1, 115200U); // 初始化 USART1，波特率 115200
 	API_USART_Init(API_USART2, 115200U); // 初始化 USART2，波特率 115200
-	API_USART_Init(API_USART3, 9600U); // 初始化 USART3，波特率 9600
+	API_USART_Init(API_USART3, 115200U); // 初始化 USART3，波特率 9600
 	API_USART_Init(API_USART4, 9600U); // 初始化 USART4，波特率 9600
 	API_PWM_Init(API_PWM_TIM1, 400U - 1U, 8U - 1U); /* 10kHz */
 	API_ADC_Init(API_ADC1); // 初始化 ADC1
@@ -95,6 +95,7 @@ int main(void)
 	Set_PID(&direction_pid, 0.035f, 0.0001f, 0.005f);
 	/*                        kp      ki      kd                   */
 	/*                               Integral_max  Out_max         */
+	JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
 	LED_Turn(Buzzer1, 200U);				/* 蜂鸣器短鸣 */
 
 /* ── 调试开关：开启/关闭所有 printf ── */

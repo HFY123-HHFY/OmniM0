@@ -226,7 +226,7 @@ void Control_Run(float actual_left, float actual_right)
 		/* 正在转弯 */
 		if (s_turn_tick < TURN_PIVOT_TICK)
 		{
-			TB6612_SetSpeed(-105,  125);
+			TB6612_SetSpeed(-105,  145);
 		}
 		else
 		{

@@ -24,8 +24,6 @@
 #include "LED.h"
 #include "KEY.h"
 #include "OLED.h"
-#include "MPU6050.h"
-#include "MPU6050_Int.h"
 #include "Control.h"
 #include "TB6612.h"
 #include "gray_adc.h"
@@ -50,15 +48,15 @@ int main(void)
 	Enroll_GrayADC_Register();				/* GrayADC 灰度传感器 资源注册 */
 
 	/* 注册后绑定中断回调*/
-	Enroll_USART_RegisterIrqHandler(Control_Task_USART_Callback); /* USART 中断回调注册 */
-	API_TIM_RegisterIrqHandler(API_TIM1, Control_Task_TIM_Callback);             /* TIM1: PID */
-	API_TIM_RegisterIrqHandler(API_TIM2, Control_Task_Encoder_Callback);         /* TIM2: Encoder 杂项任务 */
+	Enroll_USART_RegisterIrqHandler(Control_Task_USART_Callback); 				/* USART 中断回调注册 */
+	API_TIM_RegisterIrqHandler(API_TIM1, Control_Task_TIM_Callback);            /* TIM1: PID */
+	API_TIM_RegisterIrqHandler(API_TIM2, Control_Task_Encoder_Callback);        /* TIM2: Encoder */
 
 /* 初始化层：初始化相关外设，启动硬件功能 */
 	API_USART_Init(API_USART1, 115200U); // 初始化 USART1，波特率 115200
 	API_USART_Init(API_USART2, 115200U); // 初始化 USART2，波特率 115200
-	API_USART_Init(API_USART3, 115200U); // 初始化 USART3，波特率 9600
-	API_USART_Init(API_USART4, 9600U); // 初始化 USART4，波特率 9600
+	API_USART_Init(API_USART3, 115200U); // 初始化 USART3，波特率 115200
+	API_USART_Init(API_USART4, 115200U); // 初始化 USART4，波特率 115200
 	API_PWM_Init(API_PWM_TIM1, 400U - 1U, 8U - 1U); /* 10kHz */
 	API_ADC_Init(API_ADC1); // 初始化 ADC1
 	API_TIM_Init(API_TIM1, 1U); /* TIM1: PID 节拍， 每 1ms */
@@ -67,18 +65,13 @@ int main(void)
 /* 通信协议初始化 */
 	API_I2C_Init();						/* 软件 I2C 初始化 */
 	API_SPI_Init();						/* 软件 SPI 初始化 */
-	// App_I2C_ScanOnce();					/* 开机执行一次 I2C 扫描 */
+	// App_I2C_ScanOnce();				/* 开机执行一次 I2C 扫描 */
 	// App_SPI_TestOnce();				/* 开机执行一次 SPI 测试 */
 
 /*BSP硬件抽象层初始化*/
 	LED_Init(LED_LOW); // 初始化LED-低电平
 	KEY_Init(); // 初始化按键
 	OLED_Init(OLED_IF_SPI);		 		/* OLED_IF_I2C(4针) / OLED_IF_SPI(7针) */
-
-	// MPU_Init();
-	// uint8_t mpu6050_dma_int = mpu_dmp_init();
-	// usart_printf(USART1, "mpu6050_dma_int= %d\r\n", mpu6050_dma_int);
-	// Enroll_MPU6050_Register();				/* MPU6050 INT 资源注册（DMP 初始化后才能使能 EXTI） */
 
 	GrayADC_Init();							/* GrayADC 灰度传感器初始化（地址引脚） */
 	JY61P_Init();							/* JY61P 陀螺仪数据结构初始化 */
@@ -92,25 +85,24 @@ int main(void)
 	/*                       		   kp    ki    kd  目标速度    */
 	/* 方向环：线位置 PID，5ms 周期，Out_max=180 留给速度环余量 */
 	// Set_PID(&direction_pid, 0.02f, 0.01f, 0.0f);
-	Set_PID(&direction_pid, 0.035f, 0.0001f, 0.005f);
+	Set_PID(&direction_pid, 0.055f, 0.0004f, 0.005f);
 	/*                        kp      ki      kd                   */
 	/*                               Integral_max  Out_max         */
-	JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
+	// JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
 	LED_Turn(Buzzer1, 200U);				/* 蜂鸣器短鸣 */
 
 /* ── 调试开关：开启/关闭所有 printf ── */
 #define DEBUG_PRINT_ENABLE  1U
 /* ── 调试开关：开启/关闭所有 OLED显示 ── */
-#define DEBUG_OLED_ENABLE   0U
+#define DEBUG_OLED_ENABLE   1U
 
-float roll, pitch, yaw;
+// float roll, pitch, yaw;
 
 	while (1)
 	{
+		// JY61P_Task();  /* 处理已缓冲的 JY61P 字节 */
 		// const JY61P_Data_t *jy = JY61P_GetData();
-
-		JY61P_Task();  /* 处理已缓冲的 JY61P 字节 */
-		JY61P_GetAngle(&roll, &pitch, &yaw);
+		// JY61P_GetAngle(&roll, &pitch, &yaw);
 
 		/* KEY 控制*/
 		key_Get();
@@ -120,17 +112,17 @@ float roll, pitch, yaw;
 			if (print_task_flag != 0U)
 			{
 				print_task_flag = 0U;
-				// usart_printf(USART1, "key: %lu\r\n", Key);
+				usart_printf(USART4, "key: %lu\r\n", Key);
 				// GrayADC_PrintLinePos(&g_graySensor, USART2);
 
-				// usart_printf(USART2, "Acc:  %.2f %.2f %.2f\r\n",
+				// usart_printf(USART1, "Acc:  %.2f %.2f %.2f\r\n",
 				//              jy->acc_x, jy->acc_y, jy->acc_z);
-				// usart_printf(USART2, "Gyro: %.1f %.1f %.1f\r\n",
+				// usart_printf(USART1, "Gyro: %.1f %.1f %.1f\r\n",
 				//              jy->gyro_x, jy->gyro_y, jy->gyro_z);
-				// usart_printf(USART1, "Angle:%.1f %.1f %.1f\r\n",
+				// usart_printf(USART1, "Angle:%.3f %.3f %.3f\r\n",
 				// 				jy->roll, jy->pitch, jy->yaw);
-				usart_printf(USART1, "Angle:%.3f %.3f %.3f\r\n",
-								roll, pitch, yaw);
+				// usart_printf(USART1, "Angle:%.3f %.3f %.3f\r\n",
+				// 				roll, pitch, yaw);
 			}
 		#endif
 

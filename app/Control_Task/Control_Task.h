@@ -5,8 +5,10 @@
 #include "tim.h"
 #include "usart.h"
 
-extern volatile uint8_t print_task_flag; // printf节拍-50ms
-extern uint32_t Timer_Bsp_t; // 程序运行的时间戳（s）
+extern volatile uint8_t key_flag; /* 按键刷新标志位 */
+extern volatile uint8_t OLED_flag; /* OLED刷新标志位 */
+extern volatile uint8_t print_task_flag; /* 串口打印任务标志位 */
+extern uint32_t Timer_Bsp_t; /* 时间计数 */
 
 /* 串口数据包解析结果缓存（全局可读，新包到达时自动刷新） */
 #define USART_PACKET_DATA_LEN 10U

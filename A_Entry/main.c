@@ -53,10 +53,10 @@ int main(void)
 	API_TIM_RegisterIrqHandler(API_TIM2, Control_Task_Encoder_Callback);        /* TIM2: Encoder */
 
 /* 初始化层：初始化相关外设，启动硬件功能 */
-	API_USART_Init(API_USART1, 115200U); // 初始化 USART1，波特率 115200
-	API_USART_Init(API_USART2, 115200U); // 初始化 USART2，波特率 115200
-	API_USART_Init(API_USART3, 115200U); // 初始化 USART3，波特率 115200
-	API_USART_Init(API_USART4, 115200U); // 初始化 USART4，波特率 115200
+	API_USART_Init(API_USART1, 115200U); // 初始化 USART1，板载串口调试
+	API_USART_Init(API_USART2, 115200U); // 初始化 USART2，无线串口调试
+	API_USART_Init(API_USART3, 115200U); 	// 	初始化 USART3， JY61P 陀螺仪
+	API_USART_Init(API_USART4, 115200U); // 初始化 USART4，预留
 	API_PWM_Init(API_PWM_TIM1, 400U - 1U, 8U - 1U); /* 10kHz */
 	API_ADC_Init(API_ADC1); // 初始化 ADC1
 	API_TIM_Init(API_TIM1, 1U); /* TIM1: PID 节拍， 每 1ms */
@@ -81,14 +81,13 @@ int main(void)
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
 
 	/* 速度环：左右轮各自 PID，20ms 周期，输出限幅 = TB6612_MAX_DUTY */
-	PID_EncoderSpeed_Set(&speed_loop, 1.4f, 35.0f, 0.0f, 22.0f);
+	PID_EncoderSpeed_Set(&speed_loop, 4.0f, 44.0f, 0.0f, 25.0f);
 	/*                       		   kp    ki    kd  目标速度    */
 	/* 方向环：线位置 PID，5ms 周期，Out_max=180 留给速度环余量 */
-	// Set_PID(&direction_pid, 0.02f, 0.01f, 0.0f);
-	Set_PID(&direction_pid, 0.055f, 0.0004f, 0.005f);
+	Set_PID(&direction_pid, 0.1f, 0.0004f, 0.005f);
 	/*                        kp      ki      kd                   */
 	/*                               Integral_max  Out_max         */
-	// JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
+	JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
 	LED_Turn(Buzzer1, 200U);				/* 蜂鸣器短鸣 */
 
 /* ── 调试开关：开启/关闭所有 printf ── */
@@ -96,46 +95,49 @@ int main(void)
 /* ── 调试开关：开启/关闭所有 OLED显示 ── */
 #define DEBUG_OLED_ENABLE   1U
 
-// float roll, pitch, yaw;
-
 	while (1)
 	{
-		// JY61P_Task();  /* 处理已缓冲的 JY61P 字节 */
-		// const JY61P_Data_t *jy = JY61P_GetData();
-		// JY61P_GetAngle(&roll, &pitch, &yaw);
+		JY61P_Task();  /* 处理已缓冲的 JY61P 字节 */
+		const JY61P_Data_t *jy = JY61P_GetData();
 
-		/* KEY 控制*/
-		key_Get();
+/* KEY 控制*/
+		if (key_flag != 0U)
+		{
+			key_flag = 0U;
+			key_Get();
+		}
 
 /* 串口数据打印 */
 		#if (DEBUG_PRINT_ENABLE == 1U)
 			if (print_task_flag != 0U)
 			{
 				print_task_flag = 0U;
-				usart_printf(USART4, "key: %lu\r\n", Key);
+				// usart_printf(USART3, "key: %lu\r\n", Key);
 				// GrayADC_PrintLinePos(&g_graySensor, USART2);
 
 				// usart_printf(USART1, "Acc:  %.2f %.2f %.2f\r\n",
 				//              jy->acc_x, jy->acc_y, jy->acc_z);
 				// usart_printf(USART1, "Gyro: %.1f %.1f %.1f\r\n",
 				//              jy->gyro_x, jy->gyro_y, jy->gyro_z);
-				// usart_printf(USART1, "Angle:%.3f %.3f %.3f\r\n",
-				// 				jy->roll, jy->pitch, jy->yaw);
-				// usart_printf(USART1, "Angle:%.3f %.3f %.3f\r\n",
-				// 				roll, pitch, yaw);
+				usart_printf(USART1, "Angle:%.3f %.3f %.3f\r\n",
+								jy->roll, jy->pitch, jy->yaw);
 			}
 		#endif
 
 /* OLED数据打印 */
-		#if (DEBUG_OLED_ENABLE == 1U) 
-			OLED_Clear();
-			OLED_Printf(0, 0, OLED_8X16, "%d", Timer_Bsp_t);
-			OLED_Printf(64, 0, OLED_8X16, "%d", Key);
-			// OLED_Printf(0, 16, OLED_8X16, "%.1f  %.1f  %.1f", Pitch, Roll, Yaw);
-			OLED_Printf(0, 16, OLED_8X16, "Dir PID: %.1f", direction_pid.output);
-			OLED_Printf(0, 32, OLED_8X16, "L %d  R %d", Encoder1_Speed, Encoder2_Speed);
-			OLED_Printf(0, 48, OLED_8X16, "N=%d C=%d", Control_GetTargetLaps(), Control_GetIntersectionCount());
+		#if (DEBUG_OLED_ENABLE == 1U)
+			if(OLED_flag != 0U)
+			{
+				OLED_Clear();
+				OLED_Printf(0, 0, OLED_8X16, "%d", Timer_Bsp_t);
+				OLED_Printf(16, 0, OLED_8X16, "%d", Key);
+				OLED_Printf(64, 0, OLED_8X16, "Y %.1f", jy->yaw);
+				// OLED_Printf(0, 16, OLED_8X16, "%.1f  %.1f  %.1f", Pitch, Roll, Yaw);
+				OLED_Printf(0, 16, OLED_8X16, "Dir PID: %.1f", direction_pid.output);
+				OLED_Printf(0, 32, OLED_8X16, "L %d  R %d", Encoder1_Speed, Encoder2_Speed);
+				OLED_Printf(0, 48, OLED_8X16, "N=%d C=%d", Control_GetTargetLaps(), Control_GetIntersectionCount());
 			OLED_Update();
+			}
 		#endif
 	}
 }

@@ -30,7 +30,7 @@
 #include "jy61p.h"
 
 /* ── 调试开关 ── */
-#define DEBUG_PRINT_ENABLE  0U   /* 开启/关闭串口 printf 调试输出 */
+#define DEBUG_PRINT_ENABLE  1U   /* 开启/关闭串口 printf 调试输出 */
 #define DEBUG_OLED_ENABLE   1U   /* 开启/关闭 OLED 显示            */
 
 int main(void)
@@ -82,15 +82,16 @@ int main(void)
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
 
-	/* 速度环：左右轮各自 PID，20ms 周期，输出限幅 = TB6612_MAX_DUTY */
-	PID_EncoderSpeed_Set(&speed_loop, 4.0f, 44.0f, 0.0f, 15.0f);
+	/*
+	 * PID 参数设置（浮点写法，Init 阶段一次性转内部 Q16.16 整数）。
+	 * ISR 热路径全程纯整数，无浮点开销。
+	 */
+	PID_EncoderSpeed_Set(&speed_loop, 5.0f, 30.0f, 0.0f, 25.0f);
 	/*                       		   kp    ki    kd  目标速度    */
-	/* 方向环：线位置 PID，5ms 周期，Out_max=180 留给速度环余量 */
 	Set_PID(&direction_pid, 0.1f, 0.0004f, 0.005f);
-	/*                        kp      ki      kd                   */
-	/*                               Integral_max  Out_max         */
-	JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
-	LED_Turn(Buzzer1, 200U);				/* 蜂鸣器短鸣 */
+	/*                        kp     ki      kd                   */
+	// JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
+	// LED_Turn(Buzzer1, 200U);				/* 蜂鸣器短鸣 */
 
 	while (1)
 	{
@@ -107,14 +108,14 @@ int main(void)
 		if (tasks.print_50ms.flag)
 		{
 			tasks.print_50ms.flag = false;
-			// usart_printf(USART3, "key: %lu\r\n", Key);
+			usart_printf(USART1, "1: %lu, 2: %lu\r\n", Encoder1_Speed,Encoder2_Speed);
 			// GrayADC_PrintLinePos(&g_graySensor, USART2);
 			// usart_printf(USART1, "Acc:  %.2f %.2f %.2f\r\n",
 			//              jy->acc_x, jy->acc_y, jy->acc_z);
 			// usart_printf(USART1, "Gyro: %.1f %.1f %.1f\r\n",
 			//              jy->gyro_x, jy->gyro_y, jy->gyro_z);
-			usart_printf(USART1, "Angle:%.3f %.3f %.3f\r\n",
-			                jy->roll, jy->pitch, jy->yaw);
+			// usart_printf(USART1, "Angle:%.3f %.3f %.3f\r\n",
+			//                 jy->roll, jy->pitch, jy->yaw);
 		}
 #endif
 
@@ -127,7 +128,7 @@ int main(void)
 			OLED_Printf(16, 0, OLED_8X16, "%d", Key);
 			OLED_Printf(64, 0, OLED_8X16, "Y %.1f", jy->yaw);
 			// OLED_Printf(0, 16, OLED_8X16, "%.1f  %.1f  %.1f", Pitch, Roll, Yaw);
-			OLED_Printf(0, 16, OLED_8X16, "Dir PID: %.1f", direction_pid.output);
+			OLED_Printf(0, 16, OLED_8X16, "Dir PID: %d", (int)direction_pid.output);
 			OLED_Printf(0, 32, OLED_8X16, "L %d  R %d", Encoder1_Speed, Encoder2_Speed);
 			OLED_Printf(0, 48, OLED_8X16, "N=%d C=%d", Control_GetTargetLaps(), Control_GetIntersectionCount());
 			OLED_Update();

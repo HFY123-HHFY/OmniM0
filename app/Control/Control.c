@@ -21,269 +21,231 @@ GrayADC_Sensor_t g_graySensor;
 /*
  * PID_Control_Init — 速度环 + 方向环 结构初始化。
  *
- * 只做 dt / deadband / integral_separation 等调度相关配置。
- * kp / ki / kd / Out_max / target 等参数请到 main.c 里设置，方便调参。
+ * 所有参数使用 Q16.16 整数或自然单位，适配 M0+ 无 FPU。
+ * kp / ki / kd / target 等参数请到 main.c 里设置。
  */
 void PID_Control_Init(void)
 {
-	/* ── 速度环结构 ── */
-	PID_EncoderSpeed_Init(&speed_loop);
-	PID_SetSampleTime(&speed_loop.left,  0.02f);
-	PID_SetSampleTime(&speed_loop.right, 0.02f);
+    /* ── 速度环结构（左右轮独立 PID）── */
+    PID_EncoderSpeed_Init(&speed_loop);
+    PID_SetSampleTime(&speed_loop.left,  20);   /* dt = 20ms  */
+    PID_SetSampleTime(&speed_loop.right, 20);
 
-	/* ── 方向环结构 ── */
-	PID_Init(&direction_pid);
-	PID_Init_WithLimit(&direction_pid, 50000.0f, 180.0f);
-	PID_SetSampleTime(&direction_pid, 0.005f);
-	PID_SetDeadband(&direction_pid, 60.0f);
-	PID_SetIntegralSeparation(&direction_pid, 3000.0f);
+    /* ── 方向环结构 ── */
+    PID_Init(&direction_pid);
+    PID_Init_WithLimit(&direction_pid, 20, 180); /* I_out 最多 ±20, Out_max=180 */
+    PID_SetSampleTime(&direction_pid, 5);        /* dt = 5ms                    */
+    PID_SetDeadband(&direction_pid, 60);         /* 死区 60（线位置 mm×100）     */
+    PID_SetIntegralSeparation(&direction_pid, 3000); /* 积分分离阈值 3000        */
 }
 
 /* 方向环输出暂存（Direction_Control 写，LineFollow_Output 读） */
-static float g_steer = 0.0f;
+static int32_t g_steer = 0;
 
 /* =========================================================================
  * MotorOutput_Clamp — 电机输出限幅到 TB6612_MAX_DUTY (±400)
  * ========================================================================= */
 void MotorOutput_Clamp(int16_t *left, int16_t *right)
 {
-	if (*left  >  (int16_t)TB6612_MAX_DUTY)
-	{
-		*left  =  (int16_t)TB6612_MAX_DUTY;
-	}
-	if (*left  < -(int16_t)TB6612_MAX_DUTY)
-	{
-		*left  = -(int16_t)TB6612_MAX_DUTY;
-	}
-	if (*right >  (int16_t)TB6612_MAX_DUTY)
-	{
-		*right =  (int16_t)TB6612_MAX_DUTY;
-	}
-	if (*right < -(int16_t)TB6612_MAX_DUTY)
-	{
-		*right = -(int16_t)TB6612_MAX_DUTY;
-	}
+    if (*left  >  (int16_t)TB6612_MAX_DUTY) *left  =  (int16_t)TB6612_MAX_DUTY;
+    if (*left  < -(int16_t)TB6612_MAX_DUTY) *left  = -(int16_t)TB6612_MAX_DUTY;
+    if (*right >  (int16_t)TB6612_MAX_DUTY) *right =  (int16_t)TB6612_MAX_DUTY;
+    if (*right < -(int16_t)TB6612_MAX_DUTY) *right = -(int16_t)TB6612_MAX_DUTY;
 }
 
 /* =========================================================================
- * Direction_Control — 方向环（TIM1 5ms）
+ * Direction_Control — 方向环（TIMG0 ISR 5ms）
  *
- * 只做传感器读取 + 方向 PID 计算，结果存入 g_steer。
- * 不写 TB6612，硬件输出统一由 LineFollow_Output 负责。
+ * 灰度线位置 → 方向 PID → g_steer（整数，全部 Q16.16 计算在 PID 库内完成）
  * ========================================================================= */
 void Direction_Control(void)
 {
-	int32_t pos    = GrayADC_LinePosition(&g_graySensor);
-	int32_t center = (int32_t)(7U * GRAY_ADC_SENSOR_SPACING_MM * 100U / 2U);
+    int32_t pos    = GrayADC_LinePosition(&g_graySensor);
+    int32_t center = (int32_t)(7U * GRAY_ADC_SENSOR_SPACING_MM * 100U / 2U);
 
-	if (pos < 0)
-	{
-		return; /* 传感器未校准/丢线，保持上一拍 steer */
-	}
+    if (pos < 0)
+    {
+        return; /* 传感器未校准/丢线，保持上一拍 steer */
+    }
 
-	PID_SetTarget(&direction_pid, (float)center);
-	g_steer = -PID_Calc(&direction_pid, (float)pos);
+    PID_SetTarget(&direction_pid, center);
+    g_steer = -PID_Calc(&direction_pid, pos);  /* PID_Calc 返回 int32_t */
 }
 
 /* =========================================================================
- * LineFollow_Output — 速度环 + 方向环融合输出（TIM2 20ms）
+ * LineFollow_Output — 速度环 + 方向环融合输出（TIMG0 ISR 20ms）
  *
- * steer>0 → 左轮加速、右轮减速 → 车右转（纠正"线偏右"）
- * steer<0 → 左轮减速、右轮加速 → 车左转（纠正"线偏左"）
- *
- * 正式循线用。唯一写 TB6612 的入口。
+ * steer>0 → 左轮加速、右轮减速 → 车右转
+ * steer<0 → 左轮减速、右轮加速 → 车左转
  * ========================================================================= */
-void LineFollow_Output(float actual_left, float actual_right)
+void LineFollow_Output(int32_t actual_left, int32_t actual_right)
 {
-	float   out_left  = 0.0f;
-	float   out_right = 0.0f;
-	int16_t left      = 0;
-	int16_t right     = 0;
+    int32_t out_left  = 0;
+    int32_t out_right = 0;
+    int16_t left, right;
 
-	/* ── 1. 速度环 ── */
-	PID_EncoderSpeed_Control(&speed_loop, actual_left, actual_right,
-	                         &out_left, &out_right);
+    /* ── 1. 速度环（整数 PID）── */
+    PID_EncoderSpeed_Control(&speed_loop, actual_left, actual_right,
+                             &out_left, &out_right);
 
-	// /* ── 2. 融合方向环 steer ── */
-	left  = (int16_t)out_left  + (int16_t)g_steer;
-	right = (int16_t)out_right - (int16_t)g_steer;
+    /* ── 2. 融合方向环 steer ── */
+    // left  = (int16_t)out_left  + (int16_t)g_steer;
+    // right = (int16_t)out_right - (int16_t)g_steer;
 
-	/* ── 3. 限幅 + 死区 → 写电机 ── */
-	MotorOutput_Clamp(&left, &right);
-	TB6612_SetSpeed(left, right);
+	    /* ── 2. 融合方向环 steer ── */
+    left  = (int16_t)out_left;
+    right = (int16_t)out_right;
+
+    /* ── 3. 限幅 + 写电机 ── */
+    MotorOutput_Clamp(&left, &right);
+    TB6612_SetSpeed(left, right);
 }
 
 /*
- * 速度环独立控制（纯速度模式，不使用方向环 steer）。
+ * 速度环独立控制（纯速度模式）。
  */
-void PID_Speed_Control(float actual_left, float actual_right)
+void PID_Speed_Control(int32_t actual_left, int32_t actual_right)
 {
-	float   out_left  = 0.0f;
-	float   out_right = 0.0f;
-	int16_t left, right;
+    int32_t out_left  = 0;
+    int32_t out_right = 0;
+    int16_t left, right;
 
-	PID_EncoderSpeed_Control(&speed_loop, actual_left, actual_right,
-	                         &out_left, &out_right);
+    PID_EncoderSpeed_Control(&speed_loop, actual_left, actual_right,
+                             &out_left, &out_right);
 
-	left  = (int16_t)out_left;
-	right = (int16_t)out_right;
+    left  = (int16_t)out_left;
+    right = (int16_t)out_right;
 
-	MotorOutput_Clamp(&left, &right);
-	TB6612_SetSpeed(left, right);
+    MotorOutput_Clamp(&left, &right);
+    TB6612_SetSpeed(left, right);
 }
 
 /*
- * 方向环单独测试 — 纯差速转向，绕过速度环。
+ * 方向环单独测试 — 纯差速转向。
  */
 void Direction_Test_Control(void)
 {
-	int16_t left  = (int16_t)g_steer;
-	int16_t right = -(int16_t)g_steer;
+    int16_t left  = (int16_t)g_steer;
+    int16_t right = -(int16_t)g_steer;
 
-	MotorOutput_Clamp(&left, &right);
-	TB6612_SetSpeed(left, right);
+    MotorOutput_Clamp(&left, &right);
+    TB6612_SetSpeed(left, right);
 }
 
 /* ══════════════════════════════════════════════════════════════════════
- * Control_Run — 所有循线控制逻辑的入口
+ * Control_Run — 所有循线控制逻辑的入口（TIMG0 ISR 20ms）
  * ══════════════════════════════════════════════════════════════════════ */
 
 /* ── 转弯参数 ── */
-#define TURN_DELAY_MS   30U     /* 看到路口等待多久再转 (ms) */
-#define TURN_PIVOT_MS   250U    /* 差速转弯时长 (ms)，决定转多少度 */
+#define TURN_DELAY_MS   30U
+#define TURN_PIVOT_MS   250U
 
-/* ↓ 自动换算，不用管 ↓ */
-#define TURN_DELAY_TICK  (TURN_DELAY_MS  / 20U)  /* 等待拍数 */
-#define TURN_PIVOT_TICK  (TURN_PIVOT_MS / 20U)   /* 转弯拍数 */
+#define TURN_DELAY_TICK  (TURN_DELAY_MS  / 20U)
+#define TURN_PIVOT_TICK  (TURN_PIVOT_MS / 20U)
 
-#define INTERSECTIONS_PER_LAP  4U    /* 每圈路口数 */
+#define INTERSECTIONS_PER_LAP  4U
 
-static uint8_t  s_running            = 0U;  /* 0=停车, 1=运行 */
-static uint8_t  s_delaying           = 0U;  /* 0=正常, 1=路口等待中 */
-static uint8_t  s_turning            = 0U;  /* 0=直走, 1=转弯 */
-static uint16_t s_delay_tick         = 0U;  /* 等待时序 (20ms/拍) */
-static uint16_t s_turn_tick          = 0U;  /* 转弯时序 (20ms/拍) */
+static uint8_t  s_running            = 0U;
+static uint8_t  s_delaying           = 0U;
+static uint8_t  s_turning            = 0U;
+static uint16_t s_delay_tick         = 0U;
+static uint16_t s_turn_tick          = 0U;
+static uint8_t  s_intersection_count = 0U;
+static uint8_t  s_need_white         = 0U;
 
-static uint8_t  s_intersection_count = 0U;  /* 已过路口数 */
-static uint8_t  s_need_white         = 0U;  /* 需先见白才允许下次检测（防重复计数） */
+uint8_t Control_IsTurning(void)          { return s_turning; }
+uint8_t Control_GetTargetLaps(void)      { return s_target_laps; }
+uint8_t Control_GetIntersectionCount(void){ return s_intersection_count; }
 
-uint8_t Control_IsTurning(void)
+void Control_Run(int32_t actual_left, int32_t actual_right)
 {
-	return s_turning;
-}
+    /* ── 按键 ── */
+    if (Key == 2U && s_running == 0U)
+    {
+        Key                  = 0U;
+        s_running            = 1U;
+        s_delaying           = 0U;
+        s_turning            = 0U;
+        s_delay_tick         = 0U;
+        s_turn_tick          = 0U;
+        s_intersection_count = 0U;
+        s_need_white         = 0U;
+        PID_Reset(&direction_pid);
+        PID_Reset(&speed_loop.left);
+        PID_Reset(&speed_loop.right);
+    }
+    else if (Key == 3U)
+    {
+        Key          = 0U;
+        s_running    = 0U;
+        s_delaying   = 0U;
+        s_turning    = 0U;
+        s_delay_tick = 0U;
+        s_turn_tick  = 0U;
+        TB6612_SetSpeed(0, 0);
+        PID_Reset(&direction_pid);
+        PID_Reset(&speed_loop.left);
+        PID_Reset(&speed_loop.right);
+    }
 
-uint8_t Control_GetTargetLaps(void)
-{
-	return s_target_laps;
-}
+    if (s_running == 0U) return;
 
-uint8_t Control_GetIntersectionCount(void)
-{
-	return s_intersection_count;
-}
+    /* ── 转弯 / 等待 / 直走 ── */
+    if (s_turning)
+    {
+        if (s_turn_tick < TURN_PIVOT_TICK)
+        {
+            TB6612_SetSpeed(-105, 120);
+        }
+        else
+        {
+            s_turning    = 0U;
+            s_need_white = 1U;
+            PID_Reset(&direction_pid);
+            PID_Reset(&speed_loop.left);
+            PID_Reset(&speed_loop.right);
 
-void Control_Run(float actual_left, float actual_right)
-{
-	/* ── 按键 ── */
-	/* KEY2: 启动 */
-	if (Key == 2U && s_running == 0U)
-	{
-		Key                  = 0U;  /* 消费键值，防止重复触发 */
-		s_running            = 1U;
-		s_delaying           = 0U;
-		s_turning            = 0U;
-		s_delay_tick         = 0U;
-		s_turn_tick          = 0U;
-		s_intersection_count = 0U;
-		s_need_white         = 0U;
-		PID_Reset(&direction_pid);
-		PID_Reset(&speed_loop.left);
-		PID_Reset(&speed_loop.right);
-	}
-	/* KEY3: 停车 */
-	else if (Key == 3U)
-	{
-		Key          = 0U;  /* 消费键值 */
-		s_running    = 0U;
-		s_delaying   = 0U;
-		s_turning    = 0U;
-		s_delay_tick = 0U;
-		s_turn_tick  = 0U;
-		TB6612_SetSpeed(0, 0);
-		PID_Reset(&direction_pid);
-		PID_Reset(&speed_loop.left);
-		PID_Reset(&speed_loop.right);
-	}
-
-	if (s_running == 0U)
-	{
-		return;
-	}
-
-	/* ── 转弯 / 等待 / 直走 ── */
-	if (s_turning)
-	{
-		/* 正在转弯 */
-		if (s_turn_tick < TURN_PIVOT_TICK)
-		{
-			TB6612_SetSpeed(-105,  120);
-		}
-		else
-		{
-			s_turning    = 0U;
-			s_need_white = 1U;  /* 转弯结束，必须先见白才允许下次路口检测 */
-			PID_Reset(&direction_pid);
-			PID_Reset(&speed_loop.left);
-			PID_Reset(&speed_loop.right);
-
-			/* 跑完目标圈数 → 停车 */
-			if (s_intersection_count >= s_target_laps * INTERSECTIONS_PER_LAP)
-			{
-				s_running = 0U;
-				TB6612_SetSpeed(0, 0);
-			}
-		}
-		s_turn_tick++;
-	}
-	else if (s_delaying)
-	{
-		/* 路口等待中：继续循线，计满拍数后触发转弯 */
-		if (s_delay_tick >= TURN_DELAY_TICK)
-		{
-			s_delaying = 0U;
-			s_turning  = 1U;
-			s_turn_tick = 0U;
-		}
-		s_delay_tick++;
-		LineFollow_Output(actual_left, actual_right);
-	}
-	else
-	{
-		/*
-		 * 路口检测：左2路同时见黑 → 进入等待。
-		 * s_need_white 防止转弯后立即重复计数同一路口。
-		 */
-		if (s_need_white != 0U)
-		{
-			/* 等传感器回到白色底板 */
-			if (g_graySensor.digital_bits[0] == 1U &&
-			    g_graySensor.digital_bits[1] == 1U)
-			{
-				s_need_white = 0U;
-			}
-		}
-		else if (g_graySensor.digital_bits[0] == 0U &&
-		         g_graySensor.digital_bits[1] == 0U)
-		{
-			s_intersection_count++;
-			s_delaying   = 1U;
-			s_delay_tick = 0U;
-			LED_Control(LED2, LED_HIGH);
-		}
-		else
-		{
-			LED_Control(LED2, LED_LOW);
-		}
-		LineFollow_Output(actual_left, actual_right);
-	}
+            if (s_intersection_count >= s_target_laps * INTERSECTIONS_PER_LAP)
+            {
+                s_running = 0U;
+                TB6612_SetSpeed(0, 0);
+            }
+        }
+        s_turn_tick++;
+    }
+    else if (s_delaying)
+    {
+        if (s_delay_tick >= TURN_DELAY_TICK)
+        {
+            s_delaying  = 0U;
+            s_turning   = 1U;
+            s_turn_tick = 0U;
+        }
+        s_delay_tick++;
+        LineFollow_Output(actual_left, actual_right);
+    }
+    else
+    {
+        if (s_need_white != 0U)
+        {
+            if (g_graySensor.digital_bits[0] == 1U &&
+                g_graySensor.digital_bits[1] == 1U)
+            {
+                s_need_white = 0U;
+            }
+        }
+        else if (g_graySensor.digital_bits[0] == 0U &&
+                 g_graySensor.digital_bits[1] == 0U)
+        {
+            s_intersection_count++;
+            s_delaying   = 1U;
+            s_delay_tick = 0U;
+            LED_Control(LED2, LED_HIGH);
+        }
+        else
+        {
+            LED_Control(LED2, LED_LOW);
+        }
+        LineFollow_Output(actual_left, actual_right);
+    }
 }

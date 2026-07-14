@@ -59,7 +59,7 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
         G3507_Encoder_SnapshotAll();
         Encoder1_Speed = API_Encoder_GetSpeed(API_ENCODER_1);
         Encoder2_Speed = API_Encoder_GetSpeed(API_ENCODER_2);
-        Control_Run((float)Encoder1_Speed, (float)Encoder2_Speed);
+        Control_Run((int32_t)Encoder1_Speed, (int32_t)Encoder2_Speed);
     }
 
     /* ── 4. TaskManager：低频任务标志位（主循环消费）── */

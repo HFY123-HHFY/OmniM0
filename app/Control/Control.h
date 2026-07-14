@@ -27,49 +27,41 @@ extern volatile uint8_t s_target_laps;
 void PID_Control_Init(void);
 
 /*
- * 方向环控制（主循环中 5ms 调用一次，由 tasks.dir_5ms.flag 触发）。
+ * 方向环控制（TIMG0 ISR 中 5ms 调用一次）。
  *
  * 内部自动：
  *   1. 读 g_graySensor 最新线位置
- *   2. 方向 PID 计算 → 更新全局 steer 变量
- *
- * 注意：本函数只算不写电机，steer 由 LineFollow_Output 在 20ms 融合输出。
- *       严禁在 ISR 中调用（含浮点运算，M0+ 无硬件 FPU）。
+ *   2. 方向 PID 计算（整数）→ 更新全局 steer 变量
  */
 void Direction_Control(void);
 
 /*
  * 电机输出限幅到 TB6612_MAX_DUTY (±400)。
- * 所有写电机的函数统一走这里。
  */
 void MotorOutput_Clamp(int16_t *left, int16_t *right);
 
 /*
- * 循线融合输出（主循环中 20ms 调用一次，由 tasks.encoder_20ms.flag 触发）。
- *
- * 速度环 PID → 基础速度，叠加方向环 steer，差速输出到电机。
- * 唯一写 TB6612 的入口。
+ * 循线融合输出（TIMG0 ISR 中 20ms 调用一次）。
+ * 速度环整数 PID → 差速输出到电机，唯一写 TB6612 的入口。
  */
-void LineFollow_Output(float actual_left, float actual_right);
+void LineFollow_Output(int32_t actual_left, int32_t actual_right);
 
 /*
- * 速度环控制函数（纯速度模式，不使用方向环 steer）。
+ * 速度环独立控制（纯速度模式，不使用方向环 steer）。
  */
-void PID_Speed_Control(float actual_left, float actual_right);
+void PID_Speed_Control(int32_t actual_left, int32_t actual_right);
 
 /*
  * 方向环单独测试（纯差速转向，绕过速度环）。
- * 测试方向 PID 时，在主循环 20ms 分支里替换 LineFollow_Output。
  */
 void Direction_Test_Control(void);
 
 /*
- * Control_Run — 循线主控（主循环中 20ms 调用一次，由 tasks.encoder_20ms.flag 触发）。
- *
- * 内部包含：按键启停、路口检测、转弯状态机、速度+方向融合输出。
- * 主循环调度器只需调这一个函数，所有控制逻辑收敛在这里。
+ * Control_Run — 循线主控（TIMG0 ISR 中 20ms 调用一次）。
+ * 内部：按键启停、路口检测、转弯状态机、速度+方向融合。
+ * 所有 PID 运算均为整数，适合 ISR 上下文（M0+ 无 FPU）。
  */
-void Control_Run(float actual_left, float actual_right);
+void Control_Run(int32_t actual_left, int32_t actual_right);
 
 /*
  * Control_IsTurning — 返回 1 表示正在转弯。

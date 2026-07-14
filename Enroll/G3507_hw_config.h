@@ -72,14 +72,11 @@
     X(API_USART3, API_USART_CORE_UART2, HW_USART2_TX_PORT, HW_USART2_TX_PIN, HW_USART2_RX_PORT, HW_USART2_RX_PIN)\
     X(API_USART4, API_USART_CORE_UART3, HW_USART3_TX_PORT, HW_USART3_TX_PIN, HW_USART3_RX_PORT, HW_USART3_RX_PIN)
     
-
 /* TIM 板级映射：
- * - API_TIM1 → TIMG0: PID 控制节拍 (1ms)
- * - API_TIM2 → TIMG6: 编码器读取节拍 (1ms, 每 20ms 快照) 杂项任务
+ * - API_TIM1 → TIMG0: 整个系统控制节拍 (1ms)
  */
 #define HW_TIM_MAP(X) \
-    X(API_TIM1, API_TIM_CORE_TIMG0) \
-    X(API_TIM2, API_TIM_CORE_TIMG6)
+    X(API_TIM1, API_TIM_CORE_TIMG0)
 
 /* PWM 板级映射：PA16 -> TIMA1 CCP1，PA17 -> TIMA1 CCP0。 */
 #define G3507_PWM_TIMA1_CH1_PORT  GPIOA
@@ -224,8 +221,8 @@
 #define HW_USART_COUNT  4U
 /* 当前板子上注册了 2 路 PWM输出通道*/
 #define HW_PWM_COUNT    2U
-/* 当前板子上注册了 2 路 TIM */
-#define HW_TIM_COUNT    2U
+/* 当前板子上注册了 1 路 TIM */
+#define HW_TIM_COUNT   1U
 /* 当前板子上注册了 1 路 ADC */
 #define HW_ADC_COUNT  1U
 /* 当前板子上注册了 2 路软件 I2C */

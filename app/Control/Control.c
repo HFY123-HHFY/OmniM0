@@ -104,7 +104,7 @@ void LineFollow_Output(float actual_left, float actual_right)
 	PID_EncoderSpeed_Control(&speed_loop, actual_left, actual_right,
 	                         &out_left, &out_right);
 
-	/* ── 2. 融合方向环 steer ── */
+	// /* ── 2. 融合方向环 steer ── */
 	left  = (int16_t)out_left  + (int16_t)g_steer;
 	right = (int16_t)out_right - (int16_t)g_steer;
 

@@ -6,8 +6,8 @@
 /*
  * KEY 模块说明：
  * 1) 通过 Enroll 层注册板级按键资源；
- * 2) BSP 层只关心“哪个键对应哪个 GPIO”；
- * 3) 扫描函数 Key_Tick() 仍然保留，便于放到定时器中断里做轮询消抖。
+ * 2) BSP 层只关心”哪个键对应哪个 GPIO”；
+ * 3) Key_Tick() 每次调用做一次 GPIO 读取 + 消抖，由主循环调度器周期调用。
  */
 
 #ifdef __cplusplus
@@ -61,8 +61,9 @@ void KEY_Register(const KEY_Config_t *configTable, uint8_t count);
  * 这包括按键 GPIO 的输入模式配置以及按键状态清理。
  */
 void KEY_Init(void);
-/* 按键扫描函数，建议放到定时器中断里周期调用。
- * 本函数内部做按键消抖，并在按键释放后产生一次按键事件。
+/* 按键扫描函数，由 TIMG0 ISR 每 1ms 调用一次。
+ * 内部 20 分频 → 20ms 采样 → 3 次消抖 = 60ms。
+ * 按键释放后产生一次按键事件写入内部缓存，由 key_Get() 同步到全局 Key。
  */
 void Key_Tick(void);
 /* 将扫描得到的按键事件同步到全局 Key 变量。

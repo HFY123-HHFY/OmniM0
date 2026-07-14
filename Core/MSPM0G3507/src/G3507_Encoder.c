@@ -3,8 +3,11 @@
 #include "G3507_gpio.h"
 #include "G3507_exti.h"
 #include "gpio.h"
-#include "IrqPriority.h"
 #include "ti/driverlib/dl_gpio.h"
+
+/* 编码器 EXTI 中断优先级（M0+ 仅 4 级：0~3） */
+#define G3507_ENCODER_EXTI_PRIO    2U
+#define G3507_ENCODER_EXTI_SUBPRIO 0U
 #include "ti/devices/msp/m0p/mspm0g350x.h"
 
 /*
@@ -31,8 +34,8 @@ static G3507_Encoder_Ctx_t s_ctx[G3507_ENCODER_MAX];
 
 /*
  * 双缓冲编码器计数：
- * - s_encoderRaw:    EXTI ISR 累加，随时被硬件中断更新（Should_Get）
- * - s_encoderStable: TIM ISR 快照，main loop 只读（Obtained_Get）
+ * - s_encoderRaw:    EXTI ISR 累加，随时被硬件中断更新
+ * - s_encoderStable: 主循环 SnapshotAll 原子快照，供速度计算读取
  */
 static volatile int32_t s_encoderRaw[G3507_ENCODER_MAX];
 static int32_t s_encoderStable[G3507_ENCODER_MAX];
@@ -60,9 +63,9 @@ void G3507_Encoder_Init(uint8_t coreId)
 		IRQn_Type irqB = ((ctx->portB == GPIOB) ? GPIOB_INT_IRQn : GPIOA_INT_IRQn);
 
 		G3507_EXTI_Init(ctx->portA, ctx->pinA, 0x01U, /* rising */
-		                (uint32_t)irqA, IRQ_PRIO_ENCODER, IRQ_SUB_PRIO_ENCODER);
+		                (uint32_t)irqA, G3507_ENCODER_EXTI_PRIO, G3507_ENCODER_EXTI_SUBPRIO);
 		G3507_EXTI_Init(ctx->portB, ctx->pinB, 0x01U, /* rising */
-		                (uint32_t)irqB, IRQ_PRIO_ENCODER, IRQ_SUB_PRIO_ENCODER);
+		                (uint32_t)irqB, G3507_ENCODER_EXTI_PRIO, G3507_ENCODER_EXTI_SUBPRIO);
 	}
 
 	/* 3) 开启施密特迟滞：滤除同端口软件 I2C 翻转的高频噪声 */
@@ -207,8 +210,8 @@ int16_t G3507_Encoder_GetStable(uint8_t coreId)
 
 /*
  * 原子快照所有已激活编码器：
- * - raw→stable，清零 raw。
- * - 在固定周期的定时器 ISR 中调用，保证采样窗口恒定。
+ * - 关中断 → raw→stable → 清零 raw → 开中断。
+ * - 由主循环 tasks.encoder_20ms 周期调用（20ms），保证采样窗口恒定。
  */
 void G3507_Encoder_SnapshotAll(void)
 {

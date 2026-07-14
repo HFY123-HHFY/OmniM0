@@ -22,12 +22,12 @@ volatile uint8_t Key = 0; /* 按键键值 */
 volatile uint8_t s_target_laps = 0U;
 
 /* 按键扫描内部状态：用于消抖和状态变化检测。 */
-#define KEY_DEBOUNCE_COUNT 3U		   /* 消抖计数 */
+#define KEY_DEBOUNCE_COUNT 3U		   /* 消抖计数（需连续 N 次采样相同才确认稳定） */
 static uint8_t s_keyLastRawState;      /* 最近一次采样的原始按键状态。 */
 static uint8_t s_keyStableState;       /* 当前稳定的按键状态。 */
 static uint8_t s_keyPrevStableState;   /* 上一次稳定的按键状态。 */
 static uint8_t s_keyDebounceCount;     /* 当前原始状态连续稳定计数。 */
-static uint8_t s_keyTickCount;         /* 用于限制 Key_Tick 的扫描频率。 */
+static uint8_t s_keyTickCount;         /* 1ms 分频计数器：每 20 次做一次 GPIO 采样 */
 
 /*
  * 从注册表里取指定序号的按键配置。
@@ -135,16 +135,18 @@ void KEY_Init(void)
 
 /*
  * Key_Tick：按键扫描函数。
- * 该函数周期调用，内部按 20 次 tick 作为一次采样周期，
- * 通过 KEY_DEBOUNCE_COUNT 做连续稳定检测。
- * 只有按键从按下->释放的稳定变化，才会产生一次按键事件。
+ *
+ * 调用频率：1ms（由 TIMG0 ISR 直接调用）。
+ * 内部 10 分频 → 每 10ms 做一次 GPIO 采样。
+ * 消抖：需连续 KEY_DEBOUNCE_COUNT(3) 次采样一致 → 30ms 消抖窗口。
+ * 仅当按键稳定从"按下"变为"释放"时，产生一次按键事件。
  */
 void Key_Tick(void)
 {
 	uint8_t rawState;
 
 	s_keyTickCount++;
-	if (s_keyTickCount < 20U)
+	if (s_keyTickCount < 10U)
 	{
 		return;
 	}

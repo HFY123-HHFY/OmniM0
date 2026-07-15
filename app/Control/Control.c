@@ -33,7 +33,7 @@ void PID_Control_Init(void)
 
     /* ── 方向环结构 ── */
     PID_Init(&direction_pid);
-    PID_Init_WithLimit(&direction_pid, 20, 180); /* I_out 最多 ±20, Out_max=180 */
+    PID_Init_WithLimit(&direction_pid, 20, 300); /* I_out 最多 ±20, Out_max=180 */
     PID_SetSampleTime(&direction_pid, 5);        /* dt = 5ms                    */
     PID_SetDeadband(&direction_pid, 60);         /* 死区 60（线位置 mm×100）     */
     PID_SetIntegralSeparation(&direction_pid, 3000); /* 积分分离阈值 3000        */
@@ -92,7 +92,6 @@ void LineFollow_Output(int32_t actual_left, int32_t actual_right)
     // left  = (int16_t)out_left  + (int16_t)g_steer;
     // right = (int16_t)out_right - (int16_t)g_steer;
 
-	    /* ── 2. 融合方向环 steer ── */
     left  = (int16_t)out_left;
     right = (int16_t)out_right;
 
@@ -160,7 +159,7 @@ uint8_t Control_GetIntersectionCount(void){ return s_intersection_count; }
 void Control_Run(int32_t actual_left, int32_t actual_right)
 {
     /* ── 按键 ── */
-    if (Key == 2U && s_running == 0U)
+    if (Key == 1U && s_running == 0U)
     {
         Key                  = 0U;
         s_running            = 1U;
@@ -174,7 +173,7 @@ void Control_Run(int32_t actual_left, int32_t actual_right)
         PID_Reset(&speed_loop.left);
         PID_Reset(&speed_loop.right);
     }
-    else if (Key == 3U)
+    else if (Key == 2U)
     {
         Key          = 0U;
         s_running    = 0U;
@@ -195,7 +194,7 @@ void Control_Run(int32_t actual_left, int32_t actual_right)
     {
         if (s_turn_tick < TURN_PIVOT_TICK)
         {
-            TB6612_SetSpeed(-105, 120);
+            TB6612_SetSpeed(-135, 150);
         }
         else
         {

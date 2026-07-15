@@ -297,11 +297,11 @@ float JY61P_GetTemp(void)
 /* ── 发送 5 字节指令包 ── */
 static void JY61P_SendCmd(uint8_t addr, uint16_t data)
 {
-    usart_send_byte(USART3, JY61P_CMD_HEADER1);
-    usart_send_byte(USART3, JY61P_CMD_HEADER2);
-    usart_send_byte(USART3, addr);
-    usart_send_byte(USART3, (uint8_t)(data & 0xFFU));          /* DATAL */
-    usart_send_byte(USART3, (uint8_t)((data >> 8) & 0xFFU));   /* DATAH */
+    usart_send_byte(USART4, JY61P_CMD_HEADER1);
+    usart_send_byte(USART4, JY61P_CMD_HEADER2);
+    usart_send_byte(USART4, addr);
+    usart_send_byte(USART4, (uint8_t)(data & 0xFFU));          /* DATAL */
+    usart_send_byte(USART4, (uint8_t)((data >> 8) & 0xFFU));   /* DATAH */
 }
 
 /* ── 解锁 ── */
@@ -333,4 +333,3 @@ void JY61P_ZAxisZero(void)
 
     JY61P_Save();
 }
-

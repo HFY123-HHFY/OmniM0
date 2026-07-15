@@ -54,6 +54,7 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     tick_20ms++;
     if (tick_20ms >= 20U)
     {
+
         tick_20ms = 0U;
 
         G3507_Encoder_SnapshotAll();
@@ -95,7 +96,7 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
         usart_irq_dispatch_by_id(id, &data, &rxValid);
         if (rxValid != 0U)
         {
-            if (id == API_USART3)
+            if (id == API_USART4)
             {
                 JY61P_RxPush((uint8_t)data);  /* 只入队，解析交给主循环 JY61P_Task() */
             }

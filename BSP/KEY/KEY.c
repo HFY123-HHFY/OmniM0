@@ -195,7 +195,7 @@ void key_Get(void)
 		Key = KeyNum;
 		// KeyNum = 0;
 	}
-	if (KeyNum == 4U)
+	if (KeyNum == 3U)
 	{
 		s_target_laps++;
 		if (s_target_laps > 5U)

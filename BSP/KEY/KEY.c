@@ -19,7 +19,8 @@ static uint8_t Key_Num;
  * 用于主循环或其他模块直接读取按键事件结果。
  */
 volatile uint8_t Key = 0; /* 按键键值 */
-volatile uint8_t s_target_laps = 0U;
+volatile uint8_t s_target_laps = 0U; /* 目标圈数 */
+volatile uint8_t s_task_select = 1U; /* 当前选中任务号 (1-4)，KEY2 循环切换 */
 
 /* 按键扫描内部状态：用于消抖和状态变化检测。 */
 #define KEY_DEBOUNCE_COUNT 3U		   /* 消抖计数（需连续 N 次采样相同才确认稳定） */
@@ -195,6 +196,14 @@ void key_Get(void)
 		Key = KeyNum;
 		// KeyNum = 0;
 	}
+	if (KeyNum == 2U)
+	{
+		s_task_select++;
+		if (s_task_select > 4U)
+		{
+			s_task_select = 1U;
+		}
+	}
 	if (KeyNum == 3U)
 	{
 		s_target_laps++;
@@ -202,35 +211,5 @@ void key_Get(void)
 		{
 			s_target_laps = 1U;
 		}
-	}
-}
-
-/* 
-	临时的-按键控制直接电机
-*/
-void Key_Control_Motor(void)
-{
-	if (Key == 1U)
-	{
-		LED_Control(LED1, LED_HIGH);
-	}
-	if (Key == 2U)
-	{
-		LED_Control(LED2, LED_HIGH);
-		PID_EncoderSpeed_Set(&speed_loop, 1.5f, 40.0f, 0.0f, 60.0f); /* 设置速度环 PID 参数与目标值 */
-	}
-	if (Key == 3U)
-	{
-		LED_Control(LED3, LED_HIGH);;
-		PID_Reset(&speed_loop.left);
-		PID_Reset(&speed_loop.right);
-		PID_EncoderSpeed_Set(&speed_loop, 0.0f, 0.0f, 0.0f, 0.0f); /* 设置速度环 PID 参数与目标值 */
-	}
-	if (Key == 4U)
-	{
-		LED_Control(LED1, LED_LOW);
-		LED_Control(LED2, LED_LOW);
-		LED_Control(LED3, LED_LOW);
-		PID_EncoderSpeed_Set(&speed_loop, 1.5f, 40.0f, 0.0f, -20.0f); /* 设置速度环 PID 参数与目标值 */
 	}
 }

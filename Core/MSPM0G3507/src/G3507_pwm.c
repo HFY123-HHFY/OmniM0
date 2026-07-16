@@ -113,26 +113,44 @@ static uint8_t G3507_PWM_GetClockDivider(uint32_t divisor,
  * ══════════════════════════════════════════════════════════════════════ */
 void G3507_PWM_ConfigPin(uint8_t coreTimId, uint8_t coreChannel)
 {
-	/* ── TIMG8 引脚（当前板级：PB7=CCP1, PB15=CCP0）── */
+	/* ── TIMG8 引脚（PCBV3.0：PB15=CCP0→PWMA, PB7=CCP1→PWMB）── */
 	if (coreTimId == API_PWM_CORE_TIMG8)
 	{
 		if (coreChannel == API_PWM_CORE_CCP0)
 		{
-			DL_GPIO_initPeripheralOutputFunction(G3507_PWM_CH0_IOMUX,
-			                                     G3507_PWM_CH0_FUNC);
-			DL_GPIO_enableOutput(G3507_PWM_CH0_PORT,
-			                     G3507_PWM_CH0_PIN);
+			DL_GPIO_initPeripheralOutputFunction(G3507_PWM_CCP0_IOMUX,
+			                                     G3507_PWM_CCP0_FUNC);
+			DL_GPIO_enableOutput(G3507_PWM_CCP0_PORT,
+			                     G3507_PWM_CCP0_PIN);
 		}
 		else if (coreChannel == API_PWM_CORE_CCP1)
 		{
-			DL_GPIO_initPeripheralOutputFunction(G3507_PWM_CH1_IOMUX,
-			                                     G3507_PWM_CH1_FUNC);
-			DL_GPIO_enableOutput(G3507_PWM_CH1_PORT,
-			                     G3507_PWM_CH1_PIN);
+			DL_GPIO_initPeripheralOutputFunction(G3507_PWM_CCP1_IOMUX,
+			                                     G3507_PWM_CCP1_FUNC);
+			DL_GPIO_enableOutput(G3507_PWM_CCP1_PORT,
+			                     G3507_PWM_CCP1_PIN);
 		}
 		return;
 	}
 
+	/* ── TIMA1（PCBV1.0：PA16=CCP1, PA17=CCP0）── */
+	// if (coreTimId == API_PWM_CORE_TIMA1)
+	// {
+	// 	if (coreChannel == API_PWM_CORE_CCP0)
+	// 	{
+	// 		DL_GPIO_initPeripheralOutputFunction(G3507_PWM_TIMA1_CH0_IOMUX,
+	// 		                                     G3507_PWM_TIMA1_CH0_FUNC);
+	// 		DL_GPIO_enableOutput(G3507_PWM_TIMA1_CH0_PORT,
+	// 		                     G3507_PWM_TIMA1_CH0_PIN);
+	// 	}
+	// 	else if (coreChannel == API_PWM_CORE_CCP1)
+	// 	{
+	// 		DL_GPIO_initPeripheralOutputFunction(G3507_PWM_TIMA1_CH1_IOMUX,
+	// 		                                     G3507_PWM_TIMA1_CH1_FUNC);
+	// 		DL_GPIO_enableOutput(G3507_PWM_TIMA1_CH1_PORT,
+	// 		                     G3507_PWM_TIMA1_CH1_PIN);
+	// 	}
+	// }
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -191,12 +209,14 @@ void G3507_PWM_InitTimer(uint8_t coreTimId, uint16_t arr, uint16_t psc)
 	/* ── CCP 通道配置（TIMA 和 TIMG 完全相同的寄存器布局）── */
 
 #define PWM_CCP_CFG(prefix) do {                                       \
-	/* 输出极性：高电平有效（CNT>CC = high, CNT≤CC = low）        */  \
+	/* 输出极性：装载事件拉低、下行比较事件拉高                    */  \
+	/* → 高电平区间 = CNT 从 CC 数到 0，占空比 = (CC+1)/period     */  \
+	/* → CC > LOAD 时比较永不触发 → 输出恒低（纯 0% 占空比）       */  \
 	(prefix##_setCaptureCompareAction)(map.regs,                        \
-	    (DL_TIMER_CC_LACT_CCP_HIGH | DL_TIMER_CC_CDACT_CCP_LOW),       \
+	    (DL_TIMER_CC_LACT_CCP_LOW | DL_TIMER_CC_CDACT_CCP_HIGH),       \
 	    DL_TIMER_CC_0_INDEX);                                          \
 	(prefix##_setCaptureCompareAction)(map.regs,                        \
-	    (DL_TIMER_CC_LACT_CCP_HIGH | DL_TIMER_CC_CDACT_CCP_LOW),       \
+	    (DL_TIMER_CC_LACT_CCP_LOW | DL_TIMER_CC_CDACT_CCP_HIGH),       \
 	    DL_TIMER_CC_1_INDEX);                                          \
 	/* 比较模式 */                                                     \
 	(prefix##_setCaptureCompareCtl)(map.regs,                           \
@@ -239,8 +259,9 @@ void G3507_PWM_InitTimer(uint8_t coreTimId, uint16_t arr, uint16_t psc)
 		                               DL_TIMER_CCP_DIS_OUT_SET_BY_OCTL);
 
 		DL_TimerG_setTimerCount(map.regs, 0U);
-		DL_TimerG_setCaptureCompareValue(map.regs, 0U, DL_TIMER_CC_0_INDEX);
-		DL_TimerG_setCaptureCompareValue(map.regs, 0U, DL_TIMER_CC_1_INDEX);
+		/* CC 初值 = LOAD+1（period）：比较永不触发 → 上电输出恒低（0% 占空比） */
+		DL_TimerG_setCaptureCompareValue(map.regs, pwmPeriod, DL_TIMER_CC_0_INDEX);
+		DL_TimerG_setCaptureCompareValue(map.regs, pwmPeriod, DL_TIMER_CC_1_INDEX);
 		DL_TimerG_enableClock(map.regs);
 		DL_TimerG_startCounter(map.regs);
 	}
@@ -259,8 +280,9 @@ void G3507_PWM_InitTimer(uint8_t coreTimId, uint16_t arr, uint16_t psc)
 		                               DL_TIMER_CCP_DIS_OUT_SET_BY_OCTL);
 
 		DL_TimerA_setTimerCount(map.regs, 0U);
-		DL_TimerA_setCaptureCompareValue(map.regs, 0U, DL_TIMER_CC_0_INDEX);
-		DL_TimerA_setCaptureCompareValue(map.regs, 0U, DL_TIMER_CC_1_INDEX);
+		/* CC 初值 = LOAD+1（period）：比较永不触发 → 上电输出恒低（0% 占空比） */
+		DL_TimerA_setCaptureCompareValue(map.regs, pwmPeriod, DL_TIMER_CC_0_INDEX);
+		DL_TimerA_setCaptureCompareValue(map.regs, pwmPeriod, DL_TIMER_CC_1_INDEX);
 		DL_TimerA_enableClock(map.regs);
 		DL_TimerA_startCounter(map.regs);
 	}
@@ -271,9 +293,10 @@ void G3507_PWM_InitTimer(uint8_t coreTimId, uint16_t arr, uint16_t psc)
 /* ══════════════════════════════════════════════════════════════════════
  * G3507_PWM_SetCCR — 设置 PWM 占空比
  *
- * Edge-aligned down-count 模式：
- *   compareValue = period - duty
- *   当 CNT > CC 时输出高，CNT ≤ CC 时输出低。
+ * Edge-aligned down-count 模式（LACT 拉低 / CDACT 拉高）：
+ *   高电平区间 = CNT 从 CC 数到 0 → 占空比 ≈ ccr / period
+ *   ccr = 0      → CC = period（> LOAD，比较永不触发）→ 输出恒低
+ *   ccr ≥ period → CC = LOAD → 输出接近 100%
  *
  * TIMA 和 TIMG 使用相同的寄存器布局，直接用 DL_Timer 统一 API。
  * ══════════════════════════════════════════════════════════════════════ */
@@ -303,9 +326,15 @@ void G3507_PWM_SetCCR(uint8_t coreTimId, uint8_t coreChannel, uint16_t ccr)
 
 	period = DL_Timer_getLoadValue(map.regs) + 1UL;
 	duty   = (uint32_t)ccr;
-	if (duty > period) { duty = period; }
 
-	/* Edge-aligned down-count: CCP high = period - CC, 所以 CC = period - duty */
-	compareValue = period - duty;
+	if (duty == 0U)
+	{
+		compareValue = period;          /* CC > LOAD → 比较永不触发 → 恒低 0% */
+	}
+	else
+	{
+		if (duty >= period) { duty = period - 1UL; }
+		compareValue = duty;            /* 高电平 tick 数 = CC+1 ≈ duty */
+	}
 	DL_Timer_setCaptureCompareValue(map.regs, compareValue, ccIndex);
 }

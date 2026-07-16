@@ -6,6 +6,7 @@
 #include "PID/PID.h"
 #include "Filter/Filter.h"
 #include "gray_adc.h"
+#include "LED.h"     /* LED_Id_t for LED_TurnNb_Start */
 
 #ifdef __cplusplus
 extern "C" {
@@ -82,5 +83,35 @@ uint8_t Control_GetIntersectionCount(void);
 #ifdef __cplusplus
 }
 #endif
+
+/* ══════════════════════════════════════════════════════════════════════
+ * 非阻塞蜂鸣器 — 基于 g_sys_tick_ms，替代阻塞式 LED_Turn
+ *
+ * 用法：
+ *   LED_TurnNb_Start(Buzzer1, 200);               // 开蜂鸣器，启动 200ms 延时
+ *   LED_TurnNb_Task();                             // 主循环中调用，超时后自动关闭
+ *
+ * 支持 N 个独立通道（Buzzer1 / LED1 / LED2 / LED3）。
+ * ══════════════════════════════════════════════════════════════════════ */
+void LED_TurnNb_Start(LED_Id_t id, uint32_t periodMs);
+void LED_TurnNb_Task(void);
+
+/* ══════════════════════════════════════════════════════════════════════
+ * 任务链调度 — KEY1 启动/停止，KEY2 循环选择任务 (1-4)
+ *
+ * Task_Run 在 TIMG0 ISR 20ms 插槽调用（与 Control_Run 同位置）。
+ * 启动瞬间锁存任务号，运行中 KEY2 不影响当前任务。
+ * ══════════════════════════════════════════════════════════════════════ */
+void    Task_Run(int32_t actual_left, int32_t actual_right);
+void    Task_Stop(void);           /* 停车 + PID 复位，任务内部可调用   */
+uint8_t Task_IsRunning(void);      /* 1 = 运行中                        */
+uint8_t Task_GetSelect(void);      /* KEY2 当前选中任务号 (1-4)         */
+uint8_t Task_GetActive(void);      /* 正在运行的任务号，待机时为 0      */
+
+/* 任务 */
+void Task_1(void);
+void Task_2(void);
+void Task_3(void);
+void Task_4(void);
 
 #endif /* CONTROL_H */

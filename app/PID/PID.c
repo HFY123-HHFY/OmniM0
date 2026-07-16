@@ -521,10 +521,10 @@ void PID_EncoderSpeed_Init(PID_EncoderSpeed_t* speed)
     PID_Init(&speed->left);
     PID_Init(&speed->right);
 
-    /* 左右轮独立 PID，Out_max = TB6612_MAX_DUTY(400) */
-    /* I_out 上限设为 350（接近 Out_max，允许 I 项充分贡献） */
-    PID_Init_WithLimit(&speed->left,  350, 400);
-    PID_Init_WithLimit(&speed->right, 350, 400);
+    /* 左右轮独立 PID，Out_max = TB6612_MAX_DUTY(2000) */
+    /* I_out 上限设为 1750（接近 Out_max，允许 I 项充分贡献） */
+    PID_Init_WithLimit(&speed->left,  1750, 2000);
+    PID_Init_WithLimit(&speed->right, 1750, 2000);
 }
 
 void PID_EncoderSpeed_Set(PID_EncoderSpeed_t* speed,

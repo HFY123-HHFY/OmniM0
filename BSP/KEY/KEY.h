@@ -71,14 +71,12 @@ void Key_Tick(void);
  */
 void key_Get(void);
 
-/* 临时的-按键控制直接电机 */
-void Key_Control_Motor(void);
-
 /* 当前最新按键值。
  * 0 = 无按键事件；1 = KEY1；2 = KEY2；3 = KEY3；4 = KEY4。
  */
 extern volatile uint8_t Key; /* 按键键值 */
 extern volatile uint8_t s_target_laps; /* 目标圈数 */
+extern volatile uint8_t s_task_select; /* 当前选中任务号 (1-4)，KEY2 循环切换 */
 
 #ifdef __cplusplus
 }

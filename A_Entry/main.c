@@ -62,7 +62,7 @@ int main(void)
 	API_USART_Init(API_USART2, 115200U); // 初始化 USART2，无线串口调试
 	API_USART_Init(API_USART3, 115200U); // 初始化 USART3
 	API_USART_Init(API_USART4, 115200U); // 初始化 USART4，JY61P 陀螺仪
-	API_PWM_Init(API_PWM_TIM1, 400U - 1U, 8U - 1U); /* 10kHz */
+	API_PWM_Init(API_PWM_TIM1, 2000U - 1U, 1U - 1U); /* TIMG8@ULPCLK 40MHz: 40M/1/2000 = 20kHz，占空比 0-2000 */
 	API_ADC_Init(API_ADC1); // 初始化 ADC1
 	API_TIM_Init(API_TIM1, 1U); /* TIMG0 系统时基：每 1ms 触发一次中断 */
 
@@ -93,22 +93,25 @@ int main(void)
 	 * PID 参数设置（浮点写法，Init 阶段一次性转内部 Q16.16 整数）。
 	 * ISR 热路径全程纯整数，无浮点开销。
 	 */
-	PID_EncoderSpeed_Set(&speed_loop, 5.0f, 30.0f, 0.0f, 12.0f);
-	/*                       		   kp    ki    kd  目标速度    */
-	Set_PID(&direction_pid, 0.3f, 0.0005f, 0.003f);
-	/*                        kp     ki      kd                   */
-	JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
-	// LED_Turn(Buzzer1, 200U);				/* 蜂鸣器短鸣 */
+	PID_EncoderSpeed_Set(&speed_loop, 25.0f, 150.0f, 0.0f, 12.0f);
+	/*                       		    kp     ki    kd  目标速度（2000 标度，等效旧 5/30） */
+	Set_PID(&direction_pid, 1.5f, 0.0025f, 0.015f);
+	/*                       kp      ki      kd（2000 标度，等效旧 0.3/0.0005/0.003） */
+	// JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
+	LED_TurnNb_Start(Buzzer1, 200U);  /* 蜂鸣器非阻塞短鸣 200ms，立即返回 */
 
 	while (1)
 	{
+		//TB6612_SetSpeed(1500, 1500);
 		/*
 		 * 从环形缓冲区取字节，状态机解析协议帧。
 		 */
 		JY61P_Task();
 		const JY61P_Data_t *jy = JY61P_GetData();
-		// TB6612_SetSpeed(400, 400);
 		key_Get();
+
+		/* ── 非阻塞任务调度 ── */
+		LED_TurnNb_Task();  /* 蜂鸣器超时自动关（必须每次主循环调用） */
 
 		/* 串口打印 50ms */
 #if (DEBUG_PRINT_ENABLE == 1U)

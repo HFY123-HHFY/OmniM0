@@ -126,14 +126,14 @@ void TB6612_SetSpeed(int16_t speedA, int16_t speedB)
 	if (speedB > 0)
 	{
 		// 正转
-		BIN1_OUT(1);
-		BIN2_OUT(0);
+		BIN1_OUT(0);
+		BIN2_OUT(1);
 	}
 	else if (speedB < 0)
 	{
 		// 反转
-		BIN1_OUT(0);
-		BIN2_OUT(1);
+		BIN1_OUT(1);
+		BIN2_OUT(0);
 	}
 	else
 	{

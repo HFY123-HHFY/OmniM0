@@ -22,6 +22,9 @@ TaskManager tasks = {
 int16_t USART_Packet_Data[USART_PACKET_DATA_LEN] = {0};
 uint8_t USART_Packet_Count = 0;
 
+/* ── 系统毫秒计数器（TIMG0 ISR 每 1ms +1，全局可读）── */
+volatile uint32_t g_sys_tick_ms;
+
 /*
  * Control_Task_TIM_Callback — TIMG0 1ms 时基中断回调
  */
@@ -34,6 +37,9 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     {
         return;
     }
+
+    /* ── 0. 系统时基 @1ms ── */
+    g_sys_tick_ms++;
 
     /* ── 1. 按键扫描 @1ms ── */
     Key_Tick();
@@ -102,4 +108,40 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
             }
         }
     } while (rxValid != 0U);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+ * 非阻塞延时 — 基于 g_sys_tick_ms 的纯整数延时
+ * ══════════════════════════════════════════════════════════════════════ */
+
+uint32_t SysTick_GetMs(void)
+{
+    return g_sys_tick_ms;
+}
+
+void NonBlockDelay_Start(NonBlockDelay_t *d, uint16_t ms)
+{
+    if ((d == NULL) || (ms == 0U))
+    {
+        return;
+    }
+    d->start_tick  = g_sys_tick_ms;
+    d->duration_ms = ms;
+}
+
+uint8_t NonBlockDelay_IsDone(NonBlockDelay_t *d)
+{
+    if (d == NULL)
+    {
+        return 1U;
+    }
+    if (d->duration_ms == 0U)
+    {
+        return 1U;
+    }
+    if ((g_sys_tick_ms - d->start_tick) >= d->duration_ms)
+    {
+        return 1U;
+    }
+    return 0U;
 }

@@ -294,14 +294,16 @@ float JY61P_GetTemp(void)
 #define JY61P_REG_UNLOCK   0x69U   /* 解锁寄存器        */
 #define JY61P_UNLOCK_VAL   0xB588U /* 解锁魔数          */
 
+#define JY61P_USART         USART4  /* JY61P 串口号：改这里统一切换 TX/RX */
+
 /* ── 发送 5 字节指令包 ── */
 static void JY61P_SendCmd(uint8_t addr, uint16_t data)
 {
-    usart_send_byte(USART4, JY61P_CMD_HEADER1);
-    usart_send_byte(USART4, JY61P_CMD_HEADER2);
-    usart_send_byte(USART4, addr);
-    usart_send_byte(USART4, (uint8_t)(data & 0xFFU));          /* DATAL */
-    usart_send_byte(USART4, (uint8_t)((data >> 8) & 0xFFU));   /* DATAH */
+    usart_send_byte(JY61P_USART, JY61P_CMD_HEADER1);
+    usart_send_byte(JY61P_USART, JY61P_CMD_HEADER2);
+    usart_send_byte(JY61P_USART, addr);
+    usart_send_byte(JY61P_USART, (uint8_t)(data & 0xFFU));          /* DATAL */
+    usart_send_byte(JY61P_USART, (uint8_t)((data >> 8) & 0xFFU));   /* DATAH */
 }
 
 /* ── 解锁 ── */

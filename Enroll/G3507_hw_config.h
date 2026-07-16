@@ -220,7 +220,7 @@
 #define HW_USART_COUNT  4U
 /* 当前板子上注册了 2 路 PWM输出通道*/
 #define HW_PWM_COUNT    2U
-/* 当前板子上注册了 1 路 TIM */
+/* 当前板子上注册了 1 路 TIM中断 */
 #define HW_TIM_COUNT   1U
 /* 当前板子上注册了 1 路 ADC */
 #define HW_ADC_COUNT  1U

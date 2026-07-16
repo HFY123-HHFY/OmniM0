@@ -11,26 +11,46 @@
  * ══════════════════════════════════════════════════════════════════════ */
 
 typedef struct {
-    volatile bool    flag;    /* 任务触发标志：ISR 置 true，主循环消费后清 false */
-    volatile uint16_t tick;   /* 1ms 中断计数器（ISR 递增，到达 period 后归零）   */
-    uint16_t period;          /* 触发周期（单位：ms）                             */
+    volatile bool    flag;
+    volatile uint16_t tick;
+    uint16_t period;
 } TaskBlock;
 
 typedef struct {
-    /* ── 主循环低频任务（软实时）── */
-    TaskBlock print_50ms;     /* 串口：调试数据打印（50ms）    */
-    TaskBlock oled_100ms;     /* 显示：OLED 刷新（100ms）      */
+    TaskBlock print_50ms;
+    TaskBlock oled_100ms;
 } TaskManager;
 
 extern TaskManager tasks;
 
-/* ── 串口数据包解析缓存（USART 中断回调使用）── */
+/* ══════════════════════════════════════════════════════════════════════
+ * 非阻塞延时 — 基于 TIMG0 1ms 全局 tick
+ *
+ * 用法：
+ *   NonBlockDelay_t buzzer_delay;
+ *   NonBlockDelay_Start(&buzzer_delay, 200);   // 启动 200ms
+ *   if (NonBlockDelay_IsDone(&buzzer_delay)) {  // 轮询是否到时间
+ *       LED_Control(Buzzer1, LED_LOW);
+ *   }
+ *
+ * 支持 N 个独立实例，互不干扰。uint32_t 减法天然处理 49 天溢出回绕。
+ * ══════════════════════════════════════════════════════════════════════ */
+typedef struct {
+    uint32_t start_tick;
+    uint16_t duration_ms;
+} NonBlockDelay_t;
+
+void      NonBlockDelay_Start(NonBlockDelay_t *d, uint16_t ms);
+uint8_t   NonBlockDelay_IsDone(NonBlockDelay_t *d);
+uint32_t  SysTick_GetMs(void);
+
+/* ── 串口数据包解析结果缓存 ── */
 #define USART_PACKET_DATA_LEN 10U
 extern int16_t USART_Packet_Data[USART_PACKET_DATA_LEN];
 extern uint8_t USART_Packet_Count;
 
 /* ── 中断回调 ── */
-void Control_Task_TIM_Callback(API_TIM_Id_t id);           /* TIMG0 1ms 时基：Key_Tick + 高频任务 + TaskManager 计数 */
-void Control_Task_USART_Callback(API_USART_Id_t id);       /* USART 中断回调：数据接收                              */
+void Control_Task_TIM_Callback(API_TIM_Id_t id);
+void Control_Task_USART_Callback(API_USART_Id_t id);
 
 #endif /* __CONTROL_TASK_H */

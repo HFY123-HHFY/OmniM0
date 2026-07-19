@@ -26,6 +26,8 @@ message(STATUS "Resolved MCU target: ${RESOLVED_MCU_TARGET}")
 set(APP_LAYER_SOURCES
     ${CMAKE_SOURCE_DIR}/A_Entry/main.c
     ${CMAKE_SOURCE_DIR}/app/Control/Control.c
+    ${CMAKE_SOURCE_DIR}/app/Tasks/Tasks.c
+    ${CMAKE_SOURCE_DIR}/app/Detect/Detect.c
     ${CMAKE_SOURCE_DIR}/app/My_Usart/My_Usart.c
     ${CMAKE_SOURCE_DIR}/app/Control_Task/Control_Task.c
     ${CMAKE_SOURCE_DIR}/app/PID/PID.c
@@ -57,6 +59,8 @@ set(COMMON_INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/app
     ${CMAKE_SOURCE_DIR}/app/Control_Task
     ${CMAKE_SOURCE_DIR}/app/Control
+    ${CMAKE_SOURCE_DIR}/app/Tasks
+    ${CMAKE_SOURCE_DIR}/app/Detect
     ${CMAKE_SOURCE_DIR}/app/My_Usart
     ${CMAKE_SOURCE_DIR}/app/PID
     ${CMAKE_SOURCE_DIR}/app/Filter
@@ -72,6 +76,7 @@ set(BSP_COMMON_INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/BSP/LED
     ${CMAKE_SOURCE_DIR}/BSP/KEY
     ${CMAKE_SOURCE_DIR}/BSP/OLED
+    ${CMAKE_SOURCE_DIR}/BSP/Buzzer
     ${CMAKE_SOURCE_DIR}/BSP/MPU6050
     ${CMAKE_SOURCE_DIR}/BSP/MPU6050/eMPL
     ${CMAKE_SOURCE_DIR}/BSP/TB6612
@@ -81,6 +86,7 @@ set(BSP_COMMON_INCLUDE_DIRS
 
 set(BSP_LAYER_SOURCES
     ${CMAKE_SOURCE_DIR}/BSP/LED/LED.c
+    ${CMAKE_SOURCE_DIR}/BSP/Buzzer/Buzzer.c
     ${CMAKE_SOURCE_DIR}/BSP/KEY/KEY.c
     ${CMAKE_SOURCE_DIR}/BSP/OLED/OLED.c
     ${CMAKE_SOURCE_DIR}/BSP/OLED/OLED_Data.c

@@ -10,7 +10,10 @@
 #define TB6612_PWM_CH_A       (API_PWM_CH1)
 #define TB6612_PWM_CH_B       (API_PWM_CH2)
 
-/* TB6612 占空比上限（= PWM ARR+1，即满占空比对应 2000）*/
+/* 
+* TB6612 占空比上限（= PWM ARR+1，即满占空比对应 2000）
+* 映射到编码器上：占空比1000、编码器：30; 占空比2000、编码器：60
+*/
 #define TB6612_MAX_DUTY       (2000U) /* 20kHz @ 2000 步，每步 0.05% */
 
 #define TB6612_WRITE(port, pin, level) API_GPIO_Write((port), (pin), (uint8_t)((level) ? 1U : 0U))

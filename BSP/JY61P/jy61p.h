@@ -100,6 +100,15 @@ float JY61P_GetTemp(void);
  */
 void JY61P_ZAxisZero(void);
 
+/*
+ * 偏航角 EMA 低通滤波（含 ±180° 回绕）。
+ *
+ * 每帧数据解析后自动更新内部滤波值。
+ * 平滑系数 alpha≈0.2 → 时间常数 ~5 帧（~50ms），
+ * 足以滤除偶发性跳变尖峰，又不拖慢正常转向响应。
+ */
+float JY61P_GetYawFiltered(void);
+
 #ifdef __cplusplus
 }
 #endif

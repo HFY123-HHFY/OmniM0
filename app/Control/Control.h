@@ -6,7 +6,7 @@
 #include "PID/PID.h"
 #include "Filter/Filter.h"
 #include "gray_adc.h"
-#include "LED.h"     /* LED_Id_t for LED_TurnNb_Start */
+#include "LED.h"     /* LED_Id_t for Buzzer_Light */
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,11 +21,20 @@ extern PID_TypeDef direction_pid;
 /* 灰度传感器实例（main.c 定义，Control 层引用） */
 extern GrayADC_Sensor_t g_graySensor;
 
-/* 目标圈数（KEY.c 定义，KEY4 设置，Control 层读取） */
-extern volatile uint8_t s_target_laps;
+/* 任务选择（KEY.c 定义，KEY2 循环 1→4） */
+extern volatile uint8_t s_task_select;
 
-/* PID 初始化（速度环 + 方向环） */
+/* ── PID 对象 ── */
+extern PID_TypeDef yaw_pid;             /* 偏航角位置环 PID */
+
+/* PID 初始化（速度环 + 方向环 + 偏航角环） */
 void PID_Control_Init(void);
+void YawPid_Init(void);                 /* 偏航角 PID 默认初始化（Out_max=1500）  */
+void YawPid_InitStraight(void);         /* 直走专用：小死区 + 低输出上限 ±300    */
+void YawPid_Set(float kp, float ki, float kd, float target_deg);  /* 四合一：PID 参数 + 目标角度 */
+void YawPid_SetTarget(float degrees);   /* 单独设置目标偏航角（度）             */
+int32_t YawPid_Calc(float yaw_degrees); /* 计算偏航角 PID 输出（度，直接传 jy->yaw）*/
+void YawTest_Control(void);             /* 偏航角单独测试（纯差速，绕过速度环）  */
 
 /*
  * 方向环控制（TIMG0 ISR 中 5ms 调用一次）。
@@ -58,60 +67,24 @@ void PID_Speed_Control(int32_t actual_left, int32_t actual_right);
 void Direction_Test_Control(void);
 
 /*
- * Control_Run — 循线主控（TIMG0 ISR 中 20ms 调用一次）。
  * 内部：按键启停、路口检测、转弯状态机、速度+方向融合。
  * 所有 PID 运算均为整数，适合 ISR 上下文（M0+ 无 FPU）。
  */
-void Control_Run(int32_t actual_left, int32_t actual_right);
 
 /*
- * Control_IsTurning — 返回 1 表示正在转弯。
  * 主循环方向环用这个判断是否跳过 Direction_Control。
  */
-uint8_t Control_IsTurning(void);
 
 /*
- * Control_GetTargetLaps — 返回目标圈数 (1-5)。
  */
-uint8_t Control_GetTargetLaps(void);
 
 /*
- * Control_GetIntersectionCount — 返回已过路口数。
  */
-uint8_t Control_GetIntersectionCount(void);
+
 
 #ifdef __cplusplus
 }
 #endif
 
-/* ══════════════════════════════════════════════════════════════════════
- * 非阻塞蜂鸣器 — 基于 g_sys_tick_ms，替代阻塞式 LED_Turn
- *
- * 用法：
- *   LED_TurnNb_Start(Buzzer1, 200);               // 开蜂鸣器，启动 200ms 延时
- *   LED_TurnNb_Task();                             // 主循环中调用，超时后自动关闭
- *
- * 支持 N 个独立通道（Buzzer1 / LED1 / LED2 / LED3）。
- * ══════════════════════════════════════════════════════════════════════ */
-void LED_TurnNb_Start(LED_Id_t id, uint32_t periodMs);
-void LED_TurnNb_Task(void);
-
-/* ══════════════════════════════════════════════════════════════════════
- * 任务链调度 — KEY1 启动/停止，KEY2 循环选择任务 (1-4)
- *
- * Task_Run 在 TIMG0 ISR 20ms 插槽调用（与 Control_Run 同位置）。
- * 启动瞬间锁存任务号，运行中 KEY2 不影响当前任务。
- * ══════════════════════════════════════════════════════════════════════ */
-void    Task_Run(int32_t actual_left, int32_t actual_right);
-void    Task_Stop(void);           /* 停车 + PID 复位，任务内部可调用   */
-uint8_t Task_IsRunning(void);      /* 1 = 运行中                        */
-uint8_t Task_GetSelect(void);      /* KEY2 当前选中任务号 (1-4)         */
-uint8_t Task_GetActive(void);      /* 正在运行的任务号，待机时为 0      */
-
-/* 任务 */
-void Task_1(void);
-void Task_2(void);
-void Task_3(void);
-void Task_4(void);
 
 #endif /* CONTROL_H */

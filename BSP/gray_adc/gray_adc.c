@@ -17,6 +17,7 @@
 #include "adc.h"      /* API_ADC_GetValue */
 #include "Delay.h"    /* Delay_us */
 #include "My_Usart/My_Usart.h"  /* usart_printf / USART1/USART2 宏 */
+#include "Control/Control.h"    /* g_graySensor */
 #include <stdio.h>    /* sprintf */
 
 /*===========================================================================
@@ -28,8 +29,8 @@ static const uint16_t s_defaultBlack[8] = GRAY_ADC_BLACK_DEFAULT;
 /*===========================================================================
  * ADC 实例与通道 — 与 G3507_hw_config.h 中的 HW_ADC_MAP 保持一致
  *===========================================================================*/
-#define GRAY_ADC_INST    API_ADC1       /* ADC 外设实例              */
-#define GRAY_ADC_CH      API_ADC_CH6    /* ADC 通道 (PB20)           */
+#define GRAY_ADC_INST    API_ADC1       /* ADC 外设实例（与 HW_ADC_MAP 一致） */
+#define GRAY_ADC_CH      API_ADC_CH4    /* ADC 通道（与 HW_ADC_MAP 一致，当前 CH4=B25） */
 
 /*===========================================================================
  * 采样参数
@@ -101,6 +102,12 @@ void GrayADC_Init(void)
 
     /* 上电默认选通通道 0，避免地址线浮空导致的随机读数 */
     GrayADC_SelectChannel(0U);
+
+    /* digital_bits 初始化为全白(1)，防止 ISR 在首次 ADC 采集前误判全黑 */
+    {
+        uint8_t _i;
+        for (_i = 0U; _i < 8U; ++_i) { g_graySensor.digital_bits[_i] = 1U; }
+    }
 }
 
 /*===========================================================================

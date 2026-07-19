@@ -19,9 +19,11 @@
 #include "PID/PID.h"
 #include "Control/Control.h"
 #include "Control_Task/Control_Task.h"
+#include "Tasks/Tasks.h"     /* Task_GetSelect / Task_GetActive */
 
 /*BSP硬件抽象层*/
 #include "LED.h"
+#include "Buzzer.h"   /* Buzzer_Task / Buzzer_Beep */
 #include "KEY.h"
 #include "OLED.h"
 #include "Control.h"
@@ -64,6 +66,7 @@ int main(void)
 	API_USART_Init(API_USART4, 115200U); // 初始化 USART4，JY61P 陀螺仪
 	API_PWM_Init(API_PWM_TIM1, 2000U - 1U, 1U - 1U); /* TIMG8@ULPCLK 40MHz: 40M/1/2000 = 20kHz，占空比 0-2000 */
 	API_ADC_Init(API_ADC1); // 初始化 ADC1
+	GrayADC_Init();							/* GrayADC 硬件 + digital_bits 全白（必须在 TIM 前） */
 	API_TIM_Init(API_TIM1, 1U); /* TIMG0 系统时基：每 1ms 触发一次中断 */
 
 /* 通信协议初始化 */
@@ -76,56 +79,44 @@ int main(void)
 	LED_Init(LED_LOW); // 初始化LED-低电平
 	KEY_Init(); // 初始化按键
 	OLED_Init(OLED_IF_SPI);		 			/* OLED_IF_I2C(4针) / OLED_IF_SPI(7针) */
-
-	MPU_Init();	/* 初始化MPU6050 */
-	uint8_t mpu6050_dma_int = mpu_dmp_init(); /* 初始化MPU6050 DMP */
-	usart_printf(USART1, "mpu6050_dma_int= %d\r\n", mpu6050_dma_int);
-	Enroll_MPU6050_Register();				/* MPU6050 INT 资源注册（DMP 初始化后才能使能 EXTI） */
-
-	GrayADC_Init();							/* GrayADC 灰度传感器初始化（地址引脚） */
 	JY61P_Init();							/* JY61P 陀螺仪数据结构初始化 */
 	TB6612_Init(); 							/* TB6612 电机驱动初始化 */
 	API_Encoder_Init(API_ENCODER_1); 		/* 编码器 1 初始化 */
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
-
-	/*
-	 * PID 参数设置（浮点写法，Init 阶段一次性转内部 Q16.16 整数）。
-	 * ISR 热路径全程纯整数，无浮点开销。
-	 */
-	PID_EncoderSpeed_Set(&speed_loop, 25.0f, 150.0f, 0.0f, 12.0f);
-	/*                       		    kp     ki    kd  目标速度（2000 标度，等效旧 5/30） */
-	Set_PID(&direction_pid, 1.5f, 0.0025f, 0.015f);
-	/*                       kp      ki      kd（2000 标度，等效旧 0.3/0.0005/0.003） */
-	// JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
-	LED_TurnNb_Start(Buzzer1, 200U);  /* 蜂鸣器非阻塞短鸣 200ms，立即返回 */
+	JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
+	Buzzer_Beep(200);  /* 蜂鸣器短鸣 200ms，非阻塞 */
 
 	while (1)
 	{
-		//TB6612_SetSpeed(1500, 1500);
-		/*
-		 * 从环形缓冲区取字节，状态机解析协议帧。
-		 */
-		JY61P_Task();
-		const JY61P_Data_t *jy = JY61P_GetData();
-		key_Get();
+		/* ── JY61P 数据解析 @5ms ── */
+		if (tasks.jy61p_5ms.flag)
+		{
+			tasks.jy61p_5ms.flag = false;
+			JY61P_Task();
+		}
 
-		/* ── 非阻塞任务调度 ── */
-		LED_TurnNb_Task();  /* 蜂鸣器超时自动关（必须每次主循环调用） */
+		/* ── 蜂鸣器/LED 调度 @5ms ── */
+		if (tasks.buzzer_5ms.flag)
+		{
+			tasks.buzzer_5ms.flag = false;
+			Buzzer_Task();
+		}
+
+		/* ── 按键轮询 @20ms（消抖在 ISR 1ms Key_Tick 完成）── */
+		if (tasks.key_20ms.flag)
+		{
+			tasks.key_20ms.flag = false;
+			key_Get();
+		}
 
 		/* 串口打印 50ms */
 #if (DEBUG_PRINT_ENABLE == 1U)
 		if (tasks.print_50ms.flag)
 		{
 			tasks.print_50ms.flag = false;
-			usart_printf(USART1, "1: %lu, 2: %lu\r\n", Encoder1_Speed,Encoder2_Speed);
-			// GrayADC_PrintLinePos(&g_graySensor, USART2);
-			// usart_printf(USART1, "Acc:  %.2f %.2f %.2f\r\n",
-			//              jy->acc_x, jy->acc_y, jy->acc_z);
-			// usart_printf(USART1, "Gyro: %.1f %.1f %.1f\r\n",
-			//              jy->gyro_x, jy->gyro_y, jy->gyro_z);
-			// usart_printf(USART1, "Angle:%.3f %.3f %.3f\r\n",
-			//                 jy->roll, jy->pitch, jy->yaw);
+			usart_printf(USART2, "Angle:%.3f",JY61P_GetYawFiltered());
+			GrayADC_PrintBits(&g_graySensor, USART2);
 		}
 #endif
 
@@ -135,12 +126,17 @@ int main(void)
 		{
 			tasks.oled_100ms.flag = false;
 			OLED_Clear();
-			OLED_Printf(0, 0, OLED_8X16, "KEY: %d", Key);
-			OLED_Printf(64, 0, OLED_8X16, "Y %.1f", jy->yaw);
-			OLED_Printf(0, 16, OLED_8X16, "%.1f    %.1f", jy->pitch, jy->roll);
-			// OLED_Printf(0, 16, OLED_8X16, "Dir PID: %d", (int)direction_pid.output);
-			OLED_Printf(0, 32, OLED_8X16, "L %d  R %d", Encoder1_Speed, Encoder2_Speed);
-			OLED_Printf(0, 48, OLED_8X16, "N=%d C=%d", Control_GetTargetLaps(), Control_GetIntersectionCount());
+			OLED_Printf(0, 0, OLED_6X8, "T:%d Y%4.1f",Task_GetSelect(),JY61P_GetYawFiltered());
+			OLED_Printf(78, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
+				g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
+				g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
+				g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
+				g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]);
+			OLED_Printf(0, 16, OLED_6X8, "L:%d  R:%d", Encoder1_Speed, Encoder2_Speed);
+			OLED_Printf(64, 16, OLED_6X8, "P:%d T:%d", Task_GetPos(), Task_GetActive());
+			OLED_Printf(0, 32, OLED_6X8, "H:%d", s_gray_enter_fired);
+			OLED_Printf(24, 32, OLED_6X8, "B:%d", s_gray_exit_fired);
+			OLED_Printf(64, 32, OLED_6X8, "OUT:%d", (int)yaw_pid.output);
 			OLED_Update();
 		}
 #endif

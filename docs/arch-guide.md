@@ -130,8 +130,8 @@ NonBlockDelay_t d;
 NonBlockDelay_Start(&d, 200);        // 启动 200ms 延时，立刻返回
 if (NonBlockDelay_IsDone(&d)) { ... } // 轮询是否到期
 
-LED_TurnNb_Start(Buzzer1, 200);      // 非阻塞蜂鸣器（替代阻塞版 LED_Turn）
-LED_TurnNb_Task();                   // 主循环调用，超时自动关
+Buzzer_Light(Buzzer1, 200);      // 非阻塞蜂鸣器（替代阻塞版 LED_Turn）
+Buzzer_Task();                   // 主循环调用，超时自动关
 ```
 
 支持 N 个独立通道同时计时（蜂鸣器 + 多路 LED），`uint32_t` 无符号减法天然处理 49 天溢出回绕。
@@ -153,12 +153,12 @@ DL_UART_Main_setRXFIFOThreshold(map.regs,
 替代阻塞式 `LED_Turn()`，基于 `NonBlockDelay_t`：
 
 ```c
-LED_TurnNb_Start(Buzzer1, 200);  // 响 200ms，立刻返回
-LED_TurnNb_Task();               // 主循环调用，超时自动关
+Buzzer_Light(Buzzer1, 200);  // 响 200ms，立刻返回
+Buzzer_Task();               // 主循环调用，超时自动关
 
 // 多通道独立计时
-LED_TurnNb_Start(Buzzer1, 200);
-LED_TurnNb_Start(LED1, 500);
+Buzzer_Light(Buzzer1, 200);
+Buzzer_Light(LED1, 500);
 ```
 
 ---

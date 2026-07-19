@@ -4,18 +4,24 @@
 #include "usart.h"
 #include "My_Usart/My_Usart.h"
 #include "Control/Control.h"
+#include "Detect/Detect.h"   /* GrayDetect_EnterLine / GrayDetect_ExitLine */
+#include "Tasks/Tasks.h"    /* s_gray_enter_fired / Task_Run */
 #include "KEY.h"
 #include "Encoder.h"
 #include "G3507_Encoder.h"
 #include "gray_adc.h"
 #include "jy61p.h"
+#include "TB6612.h"
 
 /* ══════════════════════════════════════════════════════════════════════
  * 全局任务管理器实例（仅管理主循环执行的低频任务）
  * ══════════════════════════════════════════════════════════════════════ */
 TaskManager tasks = {
-    .print_50ms = { .period = 50  },   /* 串口：调试打印    */
-    .oled_100ms = { .period = 100 },   /* 显示：OLED 刷新   */
+    .buzzer_5ms = { .period = 5   },   /* 蜂鸣器/LED 调度    */
+    .jy61p_5ms = { .period = 5   },   /* JY61P 200Hz 过采样 */   /* JY61P 解析 @100Hz  */
+    .key_20ms   = { .period = 20  },   /* 按键轮询           */
+    .print_50ms = { .period = 50  },   /* 串口：调试打印     */
+    .oled_100ms = { .period = 100 },   /* 显示：OLED 刷新    */
 };
 
 /* ── 串口数据包缓存（USART 中断回调使用）── */
@@ -44,32 +50,52 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     /* ── 1. 按键扫描 @1ms ── */
     Key_Tick();
 
-    /* ── 2. 方向环 @5ms：灰度采集 + 方向 PID ── */
+    /* ── 2. 灰度采集 @5ms + 出入线检测 + 方向 PID ── */
     tick_5ms++;
     if (tick_5ms >= 5U)
     {
         tick_5ms = 0U;
+
         GrayADC_Task(&g_graySensor);
-        if (!Control_IsTurning())
-        {
-            Direction_Control();
-        }
+
+        /* 出入线检测 → 互斥置位：一方触发则清零对方，保证两者不同时为 1 */
+        if (GrayDetect_EnterLine()) { s_gray_enter_fired = 1U; s_gray_exit_fired = 0U; }
+        if (GrayDetect_ExitLine())  { s_gray_exit_fired  = 1U; s_gray_enter_fired = 0U; }
+
+        Direction_Control();
     }
 
-    /* ── 3. 速度环 @20ms：编码器快照 + 循线控制 ── */
+    /* ── 3. 控制 @20ms：编码器快照 + 任务调度 ── */
     tick_20ms++;
     if (tick_20ms >= 20U)
     {
         tick_20ms = 0U;
 
-        G3507_Encoder_SnapshotAll();
-        Encoder1_Speed = API_Encoder_GetSpeed(API_ENCODER_1);
-        Encoder2_Speed = -API_Encoder_GetSpeed(API_ENCODER_2);
-        // Control_Run((int32_t)Encoder1_Speed, (int32_t)Encoder2_Speed);  /* 循线转弯任务链，保留 */
-        // Task_Run((int32_t)Encoder1_Speed, (int32_t)Encoder2_Speed);        /* 任务链：KEY1 启停，KEY2 选任务 */
+		G3507_Encoder_SnapshotAll();
+		Encoder1_Speed =  API_Encoder_GetSpeed(API_ENCODER_1);
+		Encoder2_Speed = -API_Encoder_GetSpeed(API_ENCODER_2);
+        Task_Run();
+	}
+
+    /* ── 4. TaskManager：任务标志位（主循环消费）── */
+
+    if (++tasks.buzzer_5ms.tick >= tasks.buzzer_5ms.period)
+    {
+        tasks.buzzer_5ms.tick = 0U;
+        tasks.buzzer_5ms.flag = true;
     }
 
-    /* ── 4. TaskManager：低频任务标志位（主循环消费）── */
+    if (++tasks.jy61p_5ms.tick >= tasks.jy61p_5ms.period)
+    {
+        tasks.jy61p_5ms.tick = 0U;
+        tasks.jy61p_5ms.flag = true;
+    }
+
+    if (++tasks.key_20ms.tick >= tasks.key_20ms.period)
+    {
+        tasks.key_20ms.tick = 0U;
+        tasks.key_20ms.flag = true;
+    }
 
     if (++tasks.print_50ms.tick >= tasks.print_50ms.period)
     {

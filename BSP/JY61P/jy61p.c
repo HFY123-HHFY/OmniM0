@@ -335,3 +335,60 @@ void JY61P_ZAxisZero(void)
 
     JY61P_Save();
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+ * JY61P_GetYawFiltered — 偏航角 EMA 低通滤波（含 ±180° 回绕）
+ *
+ * 每次 JY61P_Task 解析出新帧后内部更新 EMA 滤波值。
+ * 系数 alpha=0.5 → 时间常数 ≈ 2 帧（20ms@100Hz）。
+ * 单次尖峰幅度减半，正常响应延迟仅 ~20ms，几乎无感知。
+ *
+ * 注意：调用此函数会触发滤波更新（内部读最新 raw 值），
+ *       同一帧内多次调用返回相同的滤波值。
+ * ══════════════════════════════════════════════════════════════════════ */
+float JY61P_GetYawFiltered(void)
+{
+    static float  s_filtered    = 0.0f;
+    static uint8_t s_inited     = 0U;
+    static uint32_t s_last_version = 0xFFFFFFFFUL;
+
+    const JY61P_Data_t *jy = JY61P_GetData();
+    float raw = jy->yaw;
+    float diff;
+    const float alpha = 0.5f;   /* 轻滤波：50% 新 + 50% 旧，仅削尖峰 */
+
+    /*
+     * 利用 update_flags 作为"数据版本号"：
+     * 同一帧重复调用时 update_flags 被 JY61P_Task 清零，
+     * 零点后自动累加。简单用指针地址作为粗略去重。
+     * 这里改为用内部版本号避免重复滤波同一帧。
+     */
+    uint32_t version = (uint32_t)jy->update_flags + (uint32_t)(*(uint32_t *)&jy->yaw);
+    if (version == s_last_version)
+    {
+        return s_filtered;  /* 同一帧数据，返回缓存值 */
+    }
+    s_last_version = version;
+
+    /* 首次初始化 */
+    if (s_inited == 0U)
+    {
+        s_filtered = raw;
+        s_inited  = 1U;
+        return s_filtered;
+    }
+
+    /* 角度差值（含 ±180° 回绕） */
+    diff = raw - s_filtered;
+    while (diff >  180.0f) { diff -= 360.0f; }
+    while (diff < -180.0f) { diff += 360.0f; }
+
+    /* EMA：filtered += diff × alpha */
+    s_filtered += diff * alpha;
+
+    /* 保持 [-180, 180] */
+    while (s_filtered >  180.0f) { s_filtered -= 360.0f; }
+    while (s_filtered < -180.0f) { s_filtered += 360.0f; }
+
+    return s_filtered;
+}

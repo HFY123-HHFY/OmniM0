@@ -39,21 +39,21 @@ extern "C" {
  * 注意：如果未调用 GrayADC_InitSensor()，驱动会在首次 Task 时自动使用默认值。
  */
 /* 顺序已翻转为 sensor[0]=最右路, sensor[7]=最左路 */
-#define GRAY_ADC_WHITE_DEFAULT  { 2264U, 2311U, 2507U, 1522U, \
-                                  2228U, 1956U, 1995U, 1586U }
-#define GRAY_ADC_BLACK_DEFAULT  {   94U,   98U,   98U,   101U, \
-                                    99U,   101U,  101U,   101U }
+#define GRAY_ADC_WHITE_DEFAULT  { 3145U, 3155U, 3080U, 3010U, \
+                                  3088U, 3130U, 2555U, 2630U }
+#define GRAY_ADC_BLACK_DEFAULT  {   158U,   208U, 117U, 124U, \
+                                    125U,   165U, 108U, 114U }
 
 /*===========================================================================
  * 配置结构体：地址选择引脚 — 由 Enroll 注册层填充
  *===========================================================================*/
 typedef struct
 {
-    void     *ad0Port;   /* AD0 引脚端口 (PB17) */
+    void     *ad0Port;   /* AD0 引脚端口 */
     uint32_t  ad0Pin;    /* AD0 引脚编号       */
-    void     *ad1Port;   /* AD1 引脚端口 (PB18) */
+    void     *ad1Port;   /* AD1 引脚端口 */
     uint32_t  ad1Pin;    /* AD1 引脚编号       */
-    void     *ad2Port;   /* AD2 引脚端口 (PB19) */
+    void     *ad2Port;   /* AD2 引脚端口 */
     uint32_t  ad2Pin;    /* AD2 引脚编号       */
 } GrayADC_Config_t;
 

@@ -19,7 +19,6 @@ static uint8_t Key_Num;
  * 用于主循环或其他模块直接读取按键事件结果。
  */
 volatile uint8_t Key = 0; /* 按键键值 */
-volatile uint8_t s_target_laps = 0U; /* 目标圈数 */
 volatile uint8_t s_task_select = 1U; /* 当前选中任务号 (1-4)，KEY2 循环切换 */
 
 /* 按键扫描内部状态：用于消抖和状态变化检测。 */
@@ -191,25 +190,20 @@ void key_Get(void)
 	static uint8_t KeyNum = 0;
 
 	KeyNum = Key_GetNum();
-	if (KeyNum)
+
+	/*
+	 * 按键路由（互斥，一次只处理一个键值）：
+	 *   KEY1 → Key=1U（Task_Run toggle 启停）
+	 *   KEY2 → 循环 s_task_select 1→4（不写 Key，仅切换任务号）
+	 *   KEY3 → 未使用
+	 */
+	if (KeyNum == 1U)
 	{
-		Key = KeyNum;
-		// KeyNum = 0;
+		Key = 1U;
 	}
-	if (KeyNum == 2U)
+	else if (KeyNum == 2U)
 	{
 		s_task_select++;
-		if (s_task_select > 4U)
-		{
-			s_task_select = 1U;
-		}
-	}
-	if (KeyNum == 3U)
-	{
-		s_target_laps++;
-		if (s_target_laps > 5U)
-		{
-			s_target_laps = 1U;
-		}
+		if (s_task_select > 4U) { s_task_select = 1U; }
 	}
 }

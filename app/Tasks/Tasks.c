@@ -4,7 +4,6 @@
 #include "Control_Task/Control_Task.h"  /* NonBlockDelay_t */
 #include "jy61p.h"     /* JY61P_GetYawFiltered */
 #include "PID/PID.h"
-#include "Encoder.h"
 #include "TB6612.h"
 #include "KEY.h"
 
@@ -19,12 +18,16 @@
 static uint8_t s_task_running = 0U;   /* 0 = 待机，1 = 运行中           */
 static uint8_t s_task_active  = 0U;   /* 启动瞬间锁存的任务号 (1-4)     */
 static uint8_t s_task2_pos    = 0U;   /* Task_2 当前位置: 1=A,2=B,3=C,4=D,5=DONE */
+static uint8_t s_task3_pos    = 0U;   /* Task_3 当前位置: 1=A,2=C,3=B,4=D,5=DONE */
 static uint8_t s_gen          = 0U;   /* 启动代次：每次 KEY1 启动 +1，任务用它感知重启 */
 
 uint8_t Task_IsRunning(void)  { return s_task_running; }
 uint8_t Task_GetSelect(void)  { return s_task_select; }
 uint8_t Task_GetActive(void)  { return s_task_active; }
-uint8_t Task_GetPos(void)     { return s_task2_pos; }
+uint8_t Task_GetPos(void) {
+    if (s_task_active == 3U || s_task_active == 4U) return s_task3_pos;   /* Task3/4 共用位置 */
+    return s_task2_pos;
+}
 
 /*
  * Task_Stop — 停止当前任务：停车 + 复位所有 PID。
@@ -35,6 +38,7 @@ void Task_Stop(void)
     s_task_running = 0U;
     s_task_active  = 0U;
     s_task2_pos    = 0U;
+    s_task3_pos    = 0U;
     TB6612_SetSpeed(0, 0);
     PID_Reset(&direction_pid);
     PID_Reset(&speed_loop.left);
@@ -91,9 +95,6 @@ void Task_Run(void)
 volatile uint8_t s_gray_enter_fired = 0U;   /* 入线事件 */
 volatile uint8_t s_gray_exit_fired  = 0U;   /* 出线事件 */ 
 
-/* ── 前向声明 ── */
-static void Drive_YawSpeed(void);
-
 /* ══════════════════════════════════════════════════════════════════════
  * Task_1 — 直走遇线停车
  *
@@ -145,32 +146,6 @@ void Task_1(void)
         Buzzer_Alert(200);                 /* 声光提示              */
         s_state = 0U;                      /* 下次启动重新初始化    */
     }
-}
-
-/* ══════════════════════════════════════════════════════════════════════
- * 速度环 + 偏航角环融合输出（Task_1 / Task_2 通用）
- *
- * 速度环 PID → 基础速度，yaw_steer 叠加为差速。
- * yaw_steer>0 → 右转（左轮加速、右轮减速）。
- * ══════════════════════════════════════════════════════════════════════ */
-static void Drive_YawSpeed(void)
-{
-    float   yaw       = JY61P_GetYawFiltered();
-    int32_t yaw_steer = YawPid_Calc(yaw);
-    int32_t out_left  = 0;
-    int32_t out_right = 0;
-    int16_t left, right;
-
-    PID_EncoderSpeed_Control(&speed_loop,
-                             (int32_t)Encoder1_Speed,
-                             (int32_t)Encoder2_Speed,
-                             &out_left, &out_right);
-
-    left  = (int16_t)out_left  + (int16_t)yaw_steer;
-    right = (int16_t)out_right - (int16_t)yaw_steer;
-
-    MotorOutput_Clamp(&left, &right);
-    TB6612_SetSpeed(left, right);
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -276,8 +251,7 @@ void Task_2(void)
             PID_Reset(&speed_loop.left);             /* 清速度环积分：A→B yaw 差速残留 */
             PID_Reset(&speed_loop.right);
         }
-        LineFollow_Output((int32_t)Encoder1_Speed,
-                          (int32_t)Encoder2_Speed);   /* 速度环 + g_steer */
+        LineFollow_Output();   /* 速度环 + g_steer */
 
         if (s_gray_exit_fired != 0U)
         {
@@ -327,8 +301,7 @@ void Task_2(void)
             PID_Reset(&speed_loop.left);             /* 清速度环积分：C→D yaw 差速残留 */
             PID_Reset(&speed_loop.right);
         }
-        LineFollow_Output((int32_t)Encoder1_Speed,
-                          (int32_t)Encoder2_Speed);   /* 速度环 + g_steer */
+        LineFollow_Output();   /* 速度环 + g_steer */
 
         if (s_gray_exit_fired != 0U)
         {
@@ -355,14 +328,327 @@ void Task_2(void)
     }
 }
 
-/* 任务3 */
-void Task_3(void)
-{
+/* ── 任务 3/4 可调参数 ── */
+#define TASK3_SPIN_ANGLE_A    (-36.0f)  /* A 点原地旋转目标角度（度）              */
+#define TASK3_SPIN_ANGLE_B    (-136.0f) /* B 点原地旋转目标角度（度）              */
+#define TASK3_SPIN_TIMEOUT_S  2U        /* 旋转超时（秒），超时后强制进入直走阶段   */
+#define TASK4_TARGET_LAPS     4U        /* 任务 4 目标圈数                          */
 
+/* ══════════════════════════════════════════════════════════════════════
+ * Task_3 — 交叉循迹一圈（A→C→B→D→A）
+ *
+ * 地图：
+ *   A ──(白底,yaw=ANGLE_A)──→ C ───(黑曲线,灰度巡线)───→ B
+ *   │                                                      │
+ *   └───(黑曲线,灰度巡线)─── A ←───(白底,yaw=ANGLE_B)─── D ┘
+ *
+ * 状态流转：
+ *   T3_A_C_SPIN   A 点：原地旋转到 TASK3_SPIN_ANGLE_A
+ *   T3_A_C_GO     yaw PID(ANGLE_A) + 速度环，遇线 → C 点
+ *   T3_C_B        灰度巡线        + 速度环，离线 → B 点
+ *   T3_B_D_SPIN   B 点：原地旋转到 TASK3_SPIN_ANGLE_B
+ *   T3_B_D_GO     yaw PID(ANGLE_B) + 速度环，遇线 → D 点
+ *   T3_D_A        灰度巡线        + 速度环，离线 → A 点（一圈完成）
+ *
+ * 速度环全程运行（15 编码器 ticks/20ms）。
+ * 旋转阶段：纯差速 Spin_Control()，不经过速度环。
+ * ══════════════════════════════════════════════════════════════════════ */
+
+/* ── 任务 3 内部状态枚举 ── */
+typedef enum {
+    T3_INIT = 0U,       /* 首次进入，设 PID 参数                         */
+    T3_A_C_SPIN,        /* A 点：原地旋转到 -45°                         */
+    T3_A_C_GO,          /* A→C：偏航角 -45° 白底直走，遇线 → C           */
+    T3_C_B,             /* C→B：黑线巡线，离线 → B                       */
+    T3_B_D_SPIN,        /* B 点：原地旋转到 -135°                        */
+    T3_B_D_GO,          /* B→D：偏航角 -135° 白底直走，遇线 → D          */
+    T3_D_A,             /* D→A：黑线巡线，离线 → A                       */
+    T3_DONE             /* 一圈完成，停车 + 声光提示                      */
+} Task3_State_t;
+
+/* ── 原地旋转控制：纯差速转向，不经过速度环 ── */
+static void Spin_Control(void)
+{
+    float   yaw   = JY61P_GetYawFiltered();
+    int32_t steer = YawPid_Calc(yaw);
+    int16_t left  = (int16_t)steer;
+    int16_t right = -(int16_t)steer;
+    MotorOutput_Clamp(&left, &right);
+    TB6612_SetSpeed(left, right);
 }
 
-/* 任务4 */
+/*
+ * Spin_IsDone — 检查旋转是否到位（±3° 稳定 200ms，或超时 TASK3_SPIN_TIMEOUT_S 秒强制退出）
+ *
+ * @param target_deg  目标偏航角（度）
+ * @param p_tick      累计 tick 计数器指针（每 20ms +1）
+ * @param p_ok        连续到位计数器指针
+ * @retval 1          旋转完成
+ * @retval 0          继续旋转
+ */
+static uint8_t Spin_IsDone(float target_deg, uint8_t *p_tick, uint8_t *p_ok)
+{
+    float yaw  = JY61P_GetYawFiltered();
+    float diff = target_deg - yaw;
+
+    /* ── ±180° 回绕 ── */
+    while (diff >  180.0f) { diff -= 360.0f; }
+    while (diff < -180.0f) { diff += 360.0f; }
+
+    /* ── ±3° 死区内 → 累计稳定计数 ── */
+    if (diff > -3.0f && diff < 3.0f)
+    {
+        (*p_ok)++;
+        if (*p_ok >= 10U) { return 1U; }   /* 200ms 稳定 → 到位 */
+    }
+    else
+    {
+        *p_ok = 0U;
+    }
+
+    /* ── 超时强制退出（TASK3_SPIN_TIMEOUT_S × 50 tick），防止传感器漂移导致无限旋转 ── */
+    (*p_tick)++;
+    if (*p_tick >= (uint8_t)(TASK3_SPIN_TIMEOUT_S * 50U)) { return 1U; }
+
+    return 0U;
+}
+
+/*
+ * Task34_Run — Task_3 / Task_4 共享状态机（A→C→B→D→A 轨迹）
+ *
+ * @param max_laps  目标圈数：Task_3 = 1 圈，Task_4 = TASK4_TARGET_LAPS 圈
+ *
+ * 每圈的最后一步（D→A巡线离线到达A点）自动判断：
+ *   圈数未满 → 回到 A_C_SPIN 开始下一圈
+ *   圈数已满 → T3_DONE 停车
+ */
+static void Task34_Run(uint8_t max_laps)
+{
+    static Task3_State_t s_state    = T3_INIT;
+    static Task3_State_t s_prev     = T3_INIT;
+    static uint8_t       s_cool     = 0U;   /* 入线检测冷却计数器（每 20ms -1）       */
+    static uint8_t       s_spin_tick = 0U;  /* 旋转超时计数器（每 20ms +1）            */
+    static uint8_t       s_spin_ok  = 0U;   /* 旋转到位连续采样计数                     */
+    static uint8_t       s_lap      = 0U;   /* 已完成圈数                               */
+    static uint8_t       s_my_gen   = 0U;
+
+    /* ── 感知任务被重启（KEY1 重新按下）── */
+    if (s_my_gen != s_gen)
+    {
+        s_my_gen = s_gen;
+        s_state  = T3_INIT;
+        s_prev   = T3_INIT;
+        s_cool   = 0U;
+        s_spin_tick = 0U;
+        s_spin_ok   = 0U;
+        s_lap       = 0U;
+    }
+
+    /* ── 检测状态切换（用于"首次进入"逻辑）── */
+    uint8_t state_entered = (s_state != s_prev);
+    s_prev = s_state;
+
+    /* ── 首次进入：设置速度环 + 方向环 PID 参数（偏航角环在各阶段独立配置）── */
+    if (s_state == T3_INIT)
+    {
+        PID_EncoderSpeed_Set(&speed_loop, 20.0f, 150.0f, 0.0f, 15.0f);
+        Set_PID(&direction_pid,  1.0f, 0.002f, 0.01f);      /* 灰度方向环参数    */
+        PID_Reset(&direction_pid);
+        s_task3_pos = 1U;   /* A 点 */
+        s_state = T3_A_C_SPIN;
+    }
+
+    /* ── 状态机 ── */
+    switch (s_state)
+    {
+
+    /* ══════════════════════════════════════════════════════════════════
+     * A 点：原地旋转到 -45°（纯差速，不经过速度环）
+     * ══════════════════════════════════════════════════════════════════ */
+    case T3_A_C_SPIN:
+        if (state_entered)
+        {
+            s_task3_pos = 1U;                       /* A 点 */
+            YawPid_Set(0.5f, 0.01f, 0.0f, TASK3_SPIN_ANGLE_A);  /* 旋转专用 PID + A 点目标 */
+            PID_SetOutputLimit(&yaw_pid, 600);       /* 舵量限 ±600（比直走 ±400 大）   */
+            PID_Reset(&yaw_pid);
+            s_spin_tick = 0U;
+            s_spin_ok   = 0U;
+        }
+
+        Spin_Control();   /* 纯差速原地旋转，不碰速度环 */
+
+        if (Spin_IsDone(TASK3_SPIN_ANGLE_A, &s_spin_tick, &s_spin_ok))
+        {
+            s_state = T3_A_C_GO;
+        }
+        break;
+
+    /* ══════════════════════════════════════════════════════════════════
+     * A→C：白底直走，偏航角保持 -45°，遇黑线到达 C 点
+     * ══════════════════════════════════════════════════════════════════ */
+    case T3_A_C_GO:
+        if (state_entered)
+        {
+            s_task3_pos = 1U;                       /* A→C 途中 */
+            s_cool      = 10U;                       /* 200ms 冷却：防旋转后边界噪点 */
+            YawPid_Set(0.3f, 0.03f, 0.0f, TASK3_SPIN_ANGLE_A);  /* 直走温和偏航角 + 保持 A 点目标 */
+            PID_SetOutputLimit(&yaw_pid, 400);       /* 直走舵量限 ±400             */
+            PID_Reset(&yaw_pid);
+            PID_Reset(&speed_loop.left);             /* ★ 清速度环积分：旋转后重新起步 */
+            PID_Reset(&speed_loop.right);
+        }
+        Drive_YawSpeed();   /* 偏航角(-45°) + 速度环 */
+
+        if (s_cool > 0U)
+        {
+            s_cool--;
+        }
+        else if (s_gray_enter_fired != 0U)
+        {
+            s_gray_enter_fired = 0U;
+            s_gray_exit_fired  = 0U;               /* 互斥 */
+            Buzzer_Alert(200);                      /* 点 C：声光提示        */
+            s_state = T3_C_B;
+        }
+        break;
+
+    /* ══════════════════════════════════════════════════════════════════
+     * C→B：黑线巡线，灰度方向环 + 速度环，离线到达 B 点
+     * ══════════════════════════════════════════════════════════════════ */
+    case T3_C_B:
+        if (state_entered)
+        {
+            s_task3_pos = 2U;                       /* C→B 巡线中 */
+            PID_Reset(&direction_pid);              /* 巡线前清方向环积分    */
+            PID_Reset(&speed_loop.left);             /* ★ 清速度环积分        */
+            PID_Reset(&speed_loop.right);
+        }
+        LineFollow_Output();   /* 速度环 + g_steer */
+
+        if (s_gray_exit_fired != 0U)
+        {
+            s_gray_exit_fired  = 0U;
+            s_gray_enter_fired = 0U;               /* 互斥 */
+            Buzzer_Alert(200);                      /* 点 B：声光提示        */
+            s_state = T3_B_D_SPIN;
+        }
+        break;
+
+    /* ══════════════════════════════════════════════════════════════════
+     * B 点：原地旋转到 -135°（纯差速，不经过速度环）
+     * ══════════════════════════════════════════════════════════════════ */
+    case T3_B_D_SPIN:
+        if (state_entered)
+        {
+            s_task3_pos = 3U;                       /* B 点 */
+            YawPid_Set(0.5f, 0.01f, 0.0f, TASK3_SPIN_ANGLE_B); /* 旋转专用 PID + B 点目标 */
+            PID_SetOutputLimit(&yaw_pid, 600);       /* 舵量限 ±600                     */
+            PID_Reset(&yaw_pid);
+            s_spin_tick = 0U;
+            s_spin_ok   = 0U;
+        }
+
+        Spin_Control();
+
+        if (Spin_IsDone(TASK3_SPIN_ANGLE_B, &s_spin_tick, &s_spin_ok))
+        {
+            s_state = T3_B_D_GO;
+        }
+        break;
+
+    /* ══════════════════════════════════════════════════════════════════
+     * B→D：白底直走，偏航角保持 -135°，遇黑线到达 D 点
+     * ══════════════════════════════════════════════════════════════════ */
+    case T3_B_D_GO:
+        if (state_entered)
+        {
+            s_task3_pos = 3U;                       /* B→D 途中 */
+            s_cool      = 10U;                       /* 200ms 冷却 */
+            YawPid_Set(0.3f, 0.03f, 0.0f, TASK3_SPIN_ANGLE_B); /* 直走温和偏航角 + 保持 B 点目标 */
+            PID_SetOutputLimit(&yaw_pid, 400);
+            PID_Reset(&yaw_pid);
+            PID_Reset(&speed_loop.left);             /* ★ 清速度环积分 */
+            PID_Reset(&speed_loop.right);
+        }
+        Drive_YawSpeed();   /* 偏航角(-135°) + 速度环 */
+
+        if (s_cool > 0U)
+        {
+            s_cool--;
+        }
+        else if (s_gray_enter_fired != 0U)
+        {
+            s_gray_enter_fired = 0U;
+            s_gray_exit_fired  = 0U;               /* 互斥 */
+            Buzzer_Alert(200);                      /* 点 D：声光提示        */
+            s_state = T3_D_A;
+        }
+        break;
+
+    /* ══════════════════════════════════════════════════════════════════
+     * D→A：黑线巡线，灰度方向环 + 速度环，离线到达 A 点，一圈完成
+     * ══════════════════════════════════════════════════════════════════ */
+    case T3_D_A:
+        if (state_entered)
+        {
+            s_task3_pos = 4U;                       /* D→A 巡线中 */
+            PID_Reset(&direction_pid);              /* 巡线前清方向环积分    */
+            PID_Reset(&speed_loop.left);             /* ★ 清速度环积分        */
+            PID_Reset(&speed_loop.right);
+        }
+        LineFollow_Output();   /* 速度环 + g_steer */
+
+        if (s_gray_exit_fired != 0U)
+        {
+            s_gray_exit_fired  = 0U;
+            s_gray_enter_fired = 0U;               /* 互斥 */
+            Buzzer_Alert(200);                      /* 点 A：声光提示        */
+
+            s_lap++;                                /* 完成一圈              */
+            if (s_lap >= max_laps)
+            {
+                s_state = T3_DONE;                   /* 圈数够 → 停车        */
+            }
+            else
+            {
+                s_state = T3_A_C_SPIN;               /* 圈数不够 → 继续下一圈 */
+            }
+        }
+        break;
+
+    /* ══════════════════════════════════════════════════════════════════
+     * 一圈完成：停车 + 复位 + 声光提示
+     * ══════════════════════════════════════════════════════════════════ */
+    case T3_DONE:
+        s_task3_pos = 5U;                       /* 完成 */
+        Task_Stop();
+        Buzzer_Alert(500);
+        s_state = T3_INIT;  /* 下次启动重新开始 */
+        break;
+
+    default:
+        s_state = T3_INIT;
+        break;
+    }
+}
+
+/*
+ * Task_3 — 交叉循迹 1 圈（A→C→B→D→A），到 A 停车。
+ */
+void Task_3(void)
+{
+    Task34_Run(1U);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+ * Task_4 — 同 Task_3 轨迹，自动行驶 TASK4_TARGET_LAPS 圈后停车
+ *
+ * 地图、状态流转与 Task_3 完全一致，仅在到达 A 点时判断圈数：
+ *   圈数 <  TASK4_TARGET_LAPS → 回到 A_C_SPIN 继续下一圈
+ *   圈数 >= TASK4_TARGET_LAPS → T3_DONE 停车
+ * ══════════════════════════════════════════════════════════════════════ */
 void Task_4(void)
 {
-
+    Task34_Run(TASK4_TARGET_LAPS);
 }

@@ -43,13 +43,13 @@ void Buzzer_Beep(uint32_t ms)
 }
 
 /*
- * Buzzer_Alert — 蜂鸣器 + LED2 组合声光提示（各 200ms）。
+ * Buzzer_Alert — 蜂鸣器 + LED2 组合声光提示。
  * 所有任务函数可直接调用。
  */
 void Buzzer_Alert(uint32_t ms)
 {
     Buzzer_Light(Buzzer1, ms);
-    // Buzzer_Light(LED2, ms);
+    Buzzer_Light(LED2, ms);
 }
 
 /*

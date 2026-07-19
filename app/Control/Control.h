@@ -51,10 +51,16 @@ void Direction_Control(void);
 void MotorOutput_Clamp(int16_t *left, int16_t *right);
 
 /*
- * 循线融合输出（TIMG0 ISR 中 20ms 调用一次）。
- * 速度环整数 PID → 差速输出到电机，唯一写 TB6612 的入口。
+ * 速度环 + 灰度方向环融合输出（TIMG0 ISR 20ms）。
+ * 内部直读 Encoder1/2_Speed，融合 g_steer。
  */
-void LineFollow_Output(int32_t actual_left, int32_t actual_right);
+void LineFollow_Output(void);
+
+/*
+ * 速度环 + 偏航角环融合输出（TIMG0 ISR 20ms）。
+ * 内部直读 Encoder1/2_Speed + JY61P_GetYawFiltered()，融合 yaw_steer。
+ */
+void Drive_YawSpeed(void);
 
 /*
  * 速度环独立控制（纯速度模式，不使用方向环 steer）。

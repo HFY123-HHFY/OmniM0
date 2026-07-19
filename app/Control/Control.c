@@ -25,7 +25,7 @@ PID_TypeDef yaw_pid;
 GrayADC_Sensor_t g_graySensor;
 
 /*
- * PID_Control_Init — 速度环 + 方向环 结构初始化。
+ * PID_Control_Init — 速度环 + 方向环 + 偏航角环结构初始化。
  */
 void PID_Control_Init(void)
 {
@@ -145,22 +145,35 @@ void Direction_Control(void)
 }
 
 /* =========================================================================
- * LineFollow_Output — 速度环 + 方向环融合输出（TIMG0 ISR 20ms）
- *
- * steer>0 → 左轮加速、右轮减速 → 车右转
- * steer<0 → 左轮减速、右轮加速 → 车左转
+ * MotorOutput_Clamp — 电机输出限幅到 TB6612_MAX_DUTY (±2000)
  * ========================================================================= */
-void LineFollow_Output(int32_t actual_left, int32_t actual_right)
+void MotorOutput_Clamp(int16_t *left, int16_t *right)
+{
+    if (*left  >  (int16_t)TB6612_MAX_DUTY) *left  =  (int16_t)TB6612_MAX_DUTY;
+    if (*left  < -(int16_t)TB6612_MAX_DUTY) *left  = -(int16_t)TB6612_MAX_DUTY;
+    if (*right >  (int16_t)TB6612_MAX_DUTY) *right =  (int16_t)TB6612_MAX_DUTY;
+    if (*right < -(int16_t)TB6612_MAX_DUTY) *right = -(int16_t)TB6612_MAX_DUTY;
+}
+
+/* =========================================================================
+ * LineFollow_Output — 速度环 + 灰度方向环融合输出（TIMG0 ISR 20ms）
+ *
+ * 内部直读 Encoder1/2_Speed 作为速度反馈。
+ * steer>0 → 右转（左轮加速、右轮减速）。
+ * ========================================================================= */
+void LineFollow_Output(void)
 {
     int32_t out_left  = 0;
     int32_t out_right = 0;
     int16_t left, right;
 
     /* ── 1. 速度环（整数 PID）── */
-    PID_EncoderSpeed_Control(&speed_loop, actual_left, actual_right,
+    PID_EncoderSpeed_Control(&speed_loop,
+                             (int32_t)Encoder1_Speed,
+                             (int32_t)Encoder2_Speed,
                              &out_left, &out_right);
 
-    /* ── 2. 融合方向环 steer ── */
+    /* ── 2. 融合方向环 g_steer ── */
     left  = (int16_t)out_left  - (int16_t)g_steer;
     right = (int16_t)out_right + (int16_t)g_steer;
 
@@ -170,14 +183,29 @@ void LineFollow_Output(int32_t actual_left, int32_t actual_right)
 }
 
 /* =========================================================================
- * MotorOutput_Clamp — 电机输出限幅到 TB6612_MAX_DUTY (±2000)
+ * Drive_YawSpeed — 速度环 + 偏航角环融合输出（TIMG0 ISR 20ms）
+ *
+ * 内部直读 Encoder1/2_Speed + JY61P_GetYawFiltered()。
+ * yaw_steer>0 → 右转（左轮加速、右轮减速）。
  * ========================================================================= */
-void MotorOutput_Clamp(int16_t *left, int16_t *right)
+void Drive_YawSpeed(void)
 {
-    if (*left  >  (int16_t)TB6612_MAX_DUTY) *left  =  (int16_t)TB6612_MAX_DUTY;
-    if (*left  < -(int16_t)TB6612_MAX_DUTY) *left  = -(int16_t)TB6612_MAX_DUTY;
-    if (*right >  (int16_t)TB6612_MAX_DUTY) *right =  (int16_t)TB6612_MAX_DUTY;
-    if (*right < -(int16_t)TB6612_MAX_DUTY) *right = -(int16_t)TB6612_MAX_DUTY;
+    float   yaw       = JY61P_GetYawFiltered();
+    int32_t yaw_steer = YawPid_Calc(yaw);
+    int32_t out_left  = 0;
+    int32_t out_right = 0;
+    int16_t left, right;
+
+    PID_EncoderSpeed_Control(&speed_loop,
+                             (int32_t)Encoder1_Speed,
+                             (int32_t)Encoder2_Speed,
+                             &out_left, &out_right);
+
+    left  = (int16_t)out_left  + (int16_t)yaw_steer;
+    right = (int16_t)out_right - (int16_t)yaw_steer;
+
+    MotorOutput_Clamp(&left, &right);
+    TB6612_SetSpeed(left, right);
 }
 
 /*

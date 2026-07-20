@@ -93,8 +93,6 @@ int main(void)
 
 	while (1)
 	{
-		const JY61P_Data_t *jy = JY61P_GetData();
-
 		/* ── 蜂鸣器/LED 调度 @5ms ── */
 		if (tasks.buzzer_5ms.flag)
 		{
@@ -123,19 +121,19 @@ int main(void)
 		if (tasks.oled_100ms.flag)
 		{
 			tasks.oled_100ms.flag = false;
-			OLED_Clear();
+			// OLED_Clear();
 			OLED_Printf(0, 0, OLED_6X8, "T:%d Y%4.1f",Task_GetSelect(),JY61P_GetYawFiltered());
-			OLED_Printf(78, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-				g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
-				g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
-				g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
-				g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]);
-			OLED_Printf(0, 16, OLED_6X8, "L:%d  R:%d", Encoder1_Speed, Encoder2_Speed);
-			OLED_Printf(64, 16, OLED_6X8, "P:%d T:%d", Task_GetPos(), Task_GetActive());
-			OLED_Printf(0, 32, OLED_6X8, "H:%d", s_gray_enter_fired);
-			OLED_Printf(24, 32, OLED_6X8, "B:%d", s_gray_exit_fired);
-			OLED_Printf(64, 32, OLED_6X8, "OUT:%d", (int)yaw_pid.output);
-			OLED_Printf(0, 48, OLED_6X8, "yaw:%.1f", jy->yaw);
+			// OLED_Printf(78, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
+			// 	g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
+			// 	g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
+			// 	g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
+			// 	g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]);
+			// OLED_Printf(0, 16, OLED_6X8, "L:%d  R:%d", Encoder1_Speed, Encoder2_Speed);
+			// OLED_Printf(64, 16, OLED_6X8, "P:%d T:%d", Task_GetPos(), Task_GetActive());
+			// OLED_Printf(0, 32, OLED_6X8, "H:%d", s_gray_enter_fired);
+			// OLED_Printf(24, 32, OLED_6X8, "B:%d", s_gray_exit_fired);
+			// OLED_Printf(64, 32, OLED_6X8, "OUT:%d", (int)yaw_pid.output);
+			// OLED_Printf(0, 48, OLED_6X8, "yaw:%.1f", jy->yaw);
 			OLED_Update();
 		}
 #endif

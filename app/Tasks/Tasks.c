@@ -270,7 +270,7 @@ void Task_2(void)
         {
             s_task2_pos = 3U;                       /* C 点 */
             s_cool      = 10U;                       /* 200ms 冷却：刚从黑线出来，防边界噪点 */
-            YawPid_SetTarget(175.0f);               /* 目标 175°     */
+            YawPid_SetTarget(172.0f);               /* 目标 170°     */
             PID_Reset(&yaw_pid);
             PID_Reset(&speed_loop.left);             /* ★ 关键：B→C 巡线曲线段左右轮差速导致 */
             PID_Reset(&speed_loop.right);            /*         速度环积分不对称，必须清零     */
@@ -329,10 +329,16 @@ void Task_2(void)
 }
 
 /* ── 任务 3/4 可调参数 ── */
-#define TASK3_SPIN_ANGLE_A    (-36.0f)  /* A 点原地旋转目标角度（度）              */
-#define TASK3_SPIN_ANGLE_B    (-136.0f) /* B 点原地旋转目标角度（度）              */
-#define TASK3_SPIN_TIMEOUT_S  2U        /* 旋转超时（秒），超时后强制进入直走阶段   */
+#define TASK3_SPIN_ANGLE_A    (-36.8f)  /* A 点原地旋转目标角度（度）              */
+#define TASK3_SPIN_ANGLE_B    (-149.5f) /* B 点原地旋转目标角度（度）              */
+#define TASK3_SPIN_TIMEOUT_S  100U        /* 旋转超时（秒），超时后强制进入直走阶段   */
 #define TASK4_TARGET_LAPS     4U        /* 任务 4 目标圈数                          */
+
+/* ── 旋转 PID 参数（纯差速 Spin_Control 专用，与直走偏航角 PID 分开）── */
+#define TASK3_SPIN_KP    0.40f /* 比例：比直走 (0.3) 略高，确保跟得上目标   */
+#define TASK3_SPIN_KI    0.01f /* 积分：低积分防累积过冲                    */
+#define TASK3_SPIN_KD    3.0f  /* ★ 微分：阻尼振荡的核心，kd=0 必然来回晃   */
+#define TASK3_SPIN_OUT_LIMIT  500U  /* 旋转舵量上限（直走为 400）            */
 
 /* ══════════════════════════════════════════════════════════════════════
  * Task_3 — 交叉循迹一圈（A→C→B→D→A）
@@ -389,6 +395,7 @@ static void Spin_Control(void)
 static uint8_t Spin_IsDone(float target_deg, uint8_t *p_tick, uint8_t *p_ok)
 {
     float yaw  = JY61P_GetYawFiltered();
+    // float yaw  = JY61P_GetData()->yaw;   /* 临时：原始数据 */
     float diff = target_deg - yaw;
 
     /* ── ±180° 回绕 ── */
@@ -461,7 +468,6 @@ static void Task34_Run(uint8_t max_laps)
     /* ── 状态机 ── */
     switch (s_state)
     {
-
     /* ══════════════════════════════════════════════════════════════════
      * A 点：原地旋转到 -45°（纯差速，不经过速度环）
      * ══════════════════════════════════════════════════════════════════ */
@@ -469,8 +475,8 @@ static void Task34_Run(uint8_t max_laps)
         if (state_entered)
         {
             s_task3_pos = 1U;                       /* A 点 */
-            YawPid_Set(0.5f, 0.01f, 0.0f, TASK3_SPIN_ANGLE_A);  /* 旋转专用 PID + A 点目标 */
-            PID_SetOutputLimit(&yaw_pid, 600);       /* 舵量限 ±600（比直走 ±400 大）   */
+            YawPid_Set(TASK3_SPIN_KP, TASK3_SPIN_KI, TASK3_SPIN_KD, TASK3_SPIN_ANGLE_A);
+            PID_SetOutputLimit(&yaw_pid, TASK3_SPIN_OUT_LIMIT);
             PID_Reset(&yaw_pid);
             s_spin_tick = 0U;
             s_spin_ok   = 0U;
@@ -492,7 +498,7 @@ static void Task34_Run(uint8_t max_laps)
         {
             s_task3_pos = 1U;                       /* A→C 途中 */
             s_cool      = 10U;                       /* 200ms 冷却：防旋转后边界噪点 */
-            YawPid_Set(0.3f, 0.03f, 0.0f, TASK3_SPIN_ANGLE_A);  /* 直走温和偏航角 + 保持 A 点目标 */
+            YawPid_Set(0.3f, 0.03f, 0.0f, TASK3_SPIN_ANGLE_A);  /* 直走温和偏航角 + 保持目标 */
             PID_SetOutputLimit(&yaw_pid, 400);       /* 直走舵量限 ±400             */
             PID_Reset(&yaw_pid);
             PID_Reset(&speed_loop.left);             /* ★ 清速度环积分：旋转后重新起步 */
@@ -542,8 +548,8 @@ static void Task34_Run(uint8_t max_laps)
         if (state_entered)
         {
             s_task3_pos = 3U;                       /* B 点 */
-            YawPid_Set(0.5f, 0.01f, 0.0f, TASK3_SPIN_ANGLE_B); /* 旋转专用 PID + B 点目标 */
-            PID_SetOutputLimit(&yaw_pid, 600);       /* 舵量限 ±600                     */
+            YawPid_Set(TASK3_SPIN_KP, TASK3_SPIN_KI, TASK3_SPIN_KD, TASK3_SPIN_ANGLE_B);
+            PID_SetOutputLimit(&yaw_pid, TASK3_SPIN_OUT_LIMIT);
             PID_Reset(&yaw_pid);
             s_spin_tick = 0U;
             s_spin_ok   = 0U;
@@ -565,7 +571,7 @@ static void Task34_Run(uint8_t max_laps)
         {
             s_task3_pos = 3U;                       /* B→D 途中 */
             s_cool      = 10U;                       /* 200ms 冷却 */
-            YawPid_Set(0.3f, 0.03f, 0.0f, TASK3_SPIN_ANGLE_B); /* 直走温和偏航角 + 保持 B 点目标 */
+            YawPid_Set(0.3f, 0.03f, 0.0f, TASK3_SPIN_ANGLE_B); /* 直走温和偏航角 + 保持目标 */
             PID_SetOutputLimit(&yaw_pid, 400);
             PID_Reset(&yaw_pid);
             PID_Reset(&speed_loop.left);             /* ★ 清速度环积分 */

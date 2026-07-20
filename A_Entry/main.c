@@ -87,14 +87,13 @@ int main(void)
 	JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
 	Buzzer_Beep(200);  /* 蜂鸣器短鸣 200ms，非阻塞 */
 
+	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 150.0f, 0.0f, 15.0f);
+	// Set_PID(&direction_pid,  1.0f, 0.002f, 0.01f);      /* 灰度方向环参数    */
+	// YawPid_Set(0.2f, 0.00f, 0.0f, -45.0f);  /* 旋转专用 PID + A 点目标 */
+
 	while (1)
 	{
-		/* ── JY61P 数据解析 @5ms ── */
-		if (tasks.jy61p_5ms.flag)
-		{
-			tasks.jy61p_5ms.flag = false;
-			JY61P_Task();
-		}
+		const JY61P_Data_t *jy = JY61P_GetData();
 
 		/* ── 蜂鸣器/LED 调度 @5ms ── */
 		if (tasks.buzzer_5ms.flag)
@@ -115,8 +114,7 @@ int main(void)
 		if (tasks.print_50ms.flag)
 		{
 			tasks.print_50ms.flag = false;
-			usart_printf(USART2, "Angle:%.3f",JY61P_GetYawFiltered());
-			GrayADC_PrintBits(&g_graySensor, USART2);
+			GrayADC_PrintRaw(&g_graySensor, USART2);
 		}
 #endif
 
@@ -137,6 +135,7 @@ int main(void)
 			OLED_Printf(0, 32, OLED_6X8, "H:%d", s_gray_enter_fired);
 			OLED_Printf(24, 32, OLED_6X8, "B:%d", s_gray_exit_fired);
 			OLED_Printf(64, 32, OLED_6X8, "OUT:%d", (int)yaw_pid.output);
+			OLED_Printf(0, 48, OLED_6X8, "yaw:%.1f", jy->yaw);
 			OLED_Update();
 		}
 #endif

@@ -81,13 +81,6 @@ void Direction_Test_Control(void);
  * 主循环方向环用这个判断是否跳过 Direction_Control。
  */
 
-/*
- */
-
-/*
- */
-
-
 #ifdef __cplusplus
 }
 #endif

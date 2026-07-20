@@ -337,56 +337,69 @@ void JY61P_ZAxisZero(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+ * JY61P_GetYawFiltered — 偏航角 EMA 低通 + 尖峰抑制
+ *
+ * 两步处理：
+ *   1. 尖峰检测：单帧 |diff| > YAW_SPIKE_THRESHOLD_DEG → 丢弃（传感器噪点）
+ *   2. EMA 平滑：filtered += diff × YAW_EMA_ALPHA
+ *
+ * alpha 越大跟踪越快但对噪点越敏感。当前 alpha=0.15：
+ *   响应 10° 阶跃 → 10 帧（100ms@100Hz）达稳态的 80%
+ *   单帧 30° 尖峰 → 直接丢弃，不进入滤波
+ *
+ * 调用：Drive_YawSpeed / Spin_Control / Spin_IsDone（20ms ISR）。
+ * ══════════════════════════════════════════════════════════════════════ */
+
+#define YAW_EMA_ALPHA            0.15f  /* EMA 系数：越小越平滑，0.15 → 15% 新 + 85% 旧 */
+#define YAW_SPIKE_THRESHOLD_DEG  20.0f  /* 单帧跳变超此值视为尖峰丢弃（100Hz 下 20° 物理不可能） */
+
+/* ══════════════════════════════════════════════════════════════════════
  * JY61P_GetYawFiltered — 偏航角 EMA 低通滤波（含 ±180° 回绕）
  *
- * 每次 JY61P_Task 解析出新帧后内部更新 EMA 滤波值。
- * 系数 alpha=0.5 → 时间常数 ≈ 2 帧（20ms@100Hz）。
- * 单次尖峰幅度减半，正常响应延迟仅 ~20ms，几乎无感知。
+ * filtered += (raw - filtered) × alpha
  *
- * 注意：调用此函数会触发滤波更新（内部读最新 raw 值），
- *       同一帧内多次调用返回相同的滤波值。
+ * alpha 越大跟踪越快、越不平滑。当前 alpha=0.3：
+ *   单帧 30° 尖峰 → 输出仅偏 9°，下一帧无后续影响
+ *   10° 阶跃 → 3 帧（~30ms@100Hz）达 65%
+ *
+ * 无尖峰检测 / 无死区 / 无额外状态机，纯 EMA。
  * ══════════════════════════════════════════════════════════════════════ */
+
+#define YAW_EMA_ALPHA  0.3f   /* 越大跟随越快，越小越平滑：0.2~0.4 之间调 */
+
 float JY61P_GetYawFiltered(void)
 {
-    static float  s_filtered    = 0.0f;
-    static uint8_t s_inited     = 0U;
-    static uint32_t s_last_version = 0xFFFFFFFFUL;
+    static float  s_filtered = 0.0f;
+    static float  s_last_raw = 0.0f;
+    static uint8_t s_inited  = 0U;
 
     const JY61P_Data_t *jy = JY61P_GetData();
     float raw = jy->yaw;
     float diff;
-    const float alpha = 0.5f;   /* 轻滤波：50% 新 + 50% 旧，仅削尖峰 */
 
-    /*
-     * 利用 update_flags 作为"数据版本号"：
-     * 同一帧重复调用时 update_flags 被 JY61P_Task 清零，
-     * 零点后自动累加。简单用指针地址作为粗略去重。
-     * 这里改为用内部版本号避免重复滤波同一帧。
-     */
-    uint32_t version = (uint32_t)jy->update_flags + (uint32_t)(*(uint32_t *)&jy->yaw);
-    if (version == s_last_version)
+    /* ── 去重：同一帧数据不重复滤波 ── */
+    if (s_inited != 0U && raw == s_last_raw)
     {
-        return s_filtered;  /* 同一帧数据，返回缓存值 */
+        return s_filtered;
     }
-    s_last_version = version;
+    s_last_raw = raw;
 
-    /* 首次初始化 */
+    /* ── 首次初始化 ── */
     if (s_inited == 0U)
     {
         s_filtered = raw;
-        s_inited  = 1U;
+        s_inited   = 1U;
         return s_filtered;
     }
 
-    /* 角度差值（含 ±180° 回绕） */
+    /* ── 角度差值（含 ±180° 回绕）── */
     diff = raw - s_filtered;
     while (diff >  180.0f) { diff -= 360.0f; }
     while (diff < -180.0f) { diff += 360.0f; }
 
-    /* EMA：filtered += diff × alpha */
-    s_filtered += diff * alpha;
+    /* ── EMA ── */
+    s_filtered += diff * YAW_EMA_ALPHA;
 
-    /* 保持 [-180, 180] */
     while (s_filtered >  180.0f) { s_filtered -= 360.0f; }
     while (s_filtered < -180.0f) { s_filtered += 360.0f; }
 

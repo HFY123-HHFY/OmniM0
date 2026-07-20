@@ -53,7 +53,7 @@ void YawPid_Init(void)
     PID_Init(&yaw_pid);
     PID_Init_WithLimit(&yaw_pid, 100, 1500);    /* I_out ±100, Out_max ±1500   */
     PID_SetSampleTime(&yaw_pid, 20);             /* dt = 20ms，和速度环同频     */
-    PID_SetDeadband(&yaw_pid, 150);              /* ±1.5° 死区（150 cdeg）      */
+    PID_SetDeadband(&yaw_pid, 100);              /* ±1.0° 死区（100 cdeg）      */
 }
 
 /*
@@ -191,6 +191,7 @@ void LineFollow_Output(void)
 void Drive_YawSpeed(void)
 {
     float   yaw       = JY61P_GetYawFiltered();
+    // float   yaw       = JY61P_GetData()->yaw;   /* 临时：原始数据，不过滤波 */
     int32_t yaw_steer = YawPid_Calc(yaw);
     int32_t out_left  = 0;
     int32_t out_right = 0;
@@ -251,4 +252,3 @@ void YawTest_Control(void)
     MotorOutput_Clamp(&left, &right);
     TB6612_SetSpeed(left, right);
 }
-

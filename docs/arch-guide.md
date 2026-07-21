@@ -77,17 +77,18 @@ G3507_hw_config.h (映射宏)
 **仅使用一个定时器 TIMG0** 作为系统时基（1ms 中断）。
 
 ISR 中直接执行时序敏感的控制任务：
-- Key_Tick @1ms（按键消抖，内部 20 分频）
-- GrayADC_Task + Direction_Control @5ms
-- Encoder Snapshot + GetSpeed + Control_Run @20ms
+- Key_Tick @1ms（按键消抖，内部 10 分频，30ms 消抖窗口）
+- JY61P_Task + GrayADC_Task + 出入线检测 + Direction_Control @5ms
+- Encoder Snapshot + GetSpeed + Task_Run @20ms
 - TaskManager tick 计数（只置标志位，供主循环消费）
 
+**JY61P_Task 在 ISR 5ms 中解析（数据年龄 ≤5ms），消除主循环延迟抖动。**
 **所有 PID 运算使用 Q16.16 整数，ISR 最坏执行时间 < 60µs**。
 
 主循环仅负责非实时任务：
-- JY61P_Task（环形缓冲解析）
-- key_Get（按键事件同步）
+- key_Get（按键事件同步，20ms）
 - OLED 刷新（100ms，由 TaskManager 标志位驱动）
+- 蜂鸣器/LED 调度（5ms）
 - printf 打印（50ms，由 TaskManager 标志位驱动）
 
 ### 4.5 统一中断优先级策略
@@ -243,13 +244,6 @@ PWM 参数（当前）：
 - `TURN_PIVOT_MS`：差速转弯持续时长
 - `INTERSECTIONS_PER_LAP`：每圈路口数（= 4）
 
-圈数控制：
-- KEY3 设定目标圈数（1-5 循环），`s_target_laps` 由 KEY.c 维护
-- `s_intersection_count` 每过一个路口 +1
-- 达到 `s_target_laps × 4` 后自动停车
-- `s_need_white` 防重复计数：转弯结束后必须先见白才能检测下一个路口
-- Key 消费模式：每次按键处理后 `Key = 0U`，防止全局变量持久化导致重复触发
-
 PID（Q16.16 整数）：
 - 速度环（20ms）：左右轮独立 PID，输出限幅 ±TB6612_MAX_DUTY
 - 方向环（5ms）：灰度线位置 PID，输出限幅 1500（2000 占空比标度），死区 60，带积分分离
@@ -259,13 +253,23 @@ PID（Q16.16 整数）：
 
 ### 7.1.1 任务链调度（Task_Run）
 
-比赛任务框架，与循线主控 `Control_Run` 并列（当前 20ms ISR 插槽挂 `Task_Run`，`Control_Run` 注释保留）：
+比赛任务框架（[Tasks.c](app/Tasks/Tasks.c)），与循线主控 `Control_Run` 并列（20ms ISR 插槽挂 `Task_Run`，`Control_Run` 注释保留）：
 
 - **KEY1**：待机时按下 → 锁存当前任务号并启动；运行时按下 → 急停（`Task_Stop`：停车 + PID 全复位）
-- **KEY2**：循环选择任务 1→2→3→4→1（`s_task_select` 由 KEY.c 维护，与 KEY3 设圈数同款消费模式）
+- **KEY2**：循环选择任务 1→2→3→4→1（`s_task_select` 由 KEY.c 维护）
+- **KEY3**：未使用
 - 启动瞬间锁存任务号到 `s_task_active`，运行中按 KEY2 不影响当前任务
-- 任务体 `Task_1..4`（Control.c），签名内可用左右轮编码器速度
-- 辅助接口：`Task_IsRunning()` / `Task_GetSelect()` / `Task_GetActive()`（OLED 显示用）
+
+| 任务 | 描述 |
+|:---:|------|
+| Task_1 | 直走遇线停车（yaw 0° + 速度环 → 入线停车） |
+| Task_2 | 循迹一圈 A→B→C→D→A（yaw 直走 + 灰度巡线交替） |
+| Task_3 | 交叉循迹一圈 A→C→B→D→A（开环旋转 + yaw 直走 + 灰度巡线） |
+| Task_4 | 同 Task_3 轨迹，自动行驶 4 圈后停车（复用 `Task34_Run(max_laps)`） |
+
+`Task_3`/`Task_4` 共用 `static Task34_Run(max_laps)` 状态机，零代码重复。
+
+辅助接口：`Task_IsRunning()` / `Task_GetSelect()` / `Task_GetActive()` / `Task_GetPos()`
 
 ### 7.2 任务调度（Control_Task）
 
@@ -274,7 +278,7 @@ PID（Q16.16 整数）：
 | 周期 | 任务 | 执行位置 |
 |------|------|:---:|
 | 1ms | Key_Tick（内部 10 分频，30ms 消抖窗口） | ISR |
-| 5ms | GrayADC_Task + Direction_Control | ISR |
+| 5ms | JY61P_Task + GrayADC_Task + 出入线检测 + Direction_Control | ISR |
 | 20ms | Encoder Snapshot + GetSpeed + Task_Run（Control_Run 保留） | ISR |
 | 50ms | usart_printf（标志位驱动） | 主循环 |
 | 100ms | OLED 刷新（标志位驱动） | 主循环 |

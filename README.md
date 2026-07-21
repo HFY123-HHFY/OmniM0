@@ -48,17 +48,20 @@ OmniM0 = **OmniLayer 架构 × 电赛M0+内核 控制场景**，目标是把工�
 OmniM0/
 ├─ A_Entry/                    # 程序入口 (main.c)
 ├─ app/                        # 应用层
-│  ├─ Control/                 # 循线控制 + 非阻塞蜂鸣器
-│  ├─ Control_Task/            # TIMG0 ISR + TaskManager + 非阻塞延时
+│  ├─ Control/                 # 循线控制 + 偏航角PID + 电机输出融合
+│  ├─ Control_Task/            # TIMG0 ISR 调度 + TaskManager + 非阻塞延时
+│  ├─ Tasks/                   # ★ 任务链：Task_1~4（KEY1 启动, KEY2 选择）
+│  ├─ Detect/                  # ★ 灰度入/离线检测器（互斥状态机）
 │  ├─ PID/                     # Q16.16 整数 PID + float API
 │  ├─ Filter/                  # 滤波器
 │  └─ My_Usart/                # 串口 printf 重定向 + 数据包解析
 ├─ BSP/                        # 板级设备层
-│  ├─ LED/  KEY/  OLED/
+│  ├─ LED/  KEY/  OLED/  Buzzer/
 │  ├─ MPU6050/                 # 六轴姿态（DMP 已启用）
 │  ├─ TB6612/                  # 电机驱动（±2000 占空比 @20kHz）
 │  ├─ gray_adc/                # ★ 8 路灰度传感器（74HC4051 模拟开关）
-│  └─ JY61P/                   # ★ 维特智能六轴陀螺仪（UART 主动上报，USART4）
+│  ├─ JY61P/                   # ★ 维特智能六轴陀螺仪（UART 主动上报，USART4）
+│  ├─ StepMotor/               # 步进电机驱动
 │  ├─ BMP280/                  # 可选模块（按需启用）
 │  ├─ QMC5883P/                # 可选模块（按需启用）
 │  └─ NRF24L01/                # 可选模块（按需启用）
@@ -105,9 +108,17 @@ G3507_hw_config.h -> Enroll.c -> API/BSP Register -> 运行期按逻辑 ID 调�
 
 | 优先级 | 中断源 | 说明 |
 |:---:|------|------|
-| 0 | TIMG0 | 系统时基 1ms（ISR 直接执行：Key_Tick + 灰度 + PID + 编码器 + 电机） |
+| 0 | TIMG0 | 系统时基 1ms（ISR 直接执行：Key_Tick + JY61P 解析 + 灰度 + 方向PID + 编码器 + 任务链） |
 | 2 | Encoder EXTI / USART4 | 编码器脉冲捕获（极短 ISR）/ JY61P 陀螺仪 RX |
 | 3 | USART1/2/3 + 缺省 | 调试串口、MPU6050 等 |
+
+### 🕹️ 按键映射
+
+| 按键 | 功能 |
+|:---:|------|
+| KEY1 | 任务启动/急停（toggle） |
+| KEY2 | 循环选择任务 1→2→3→4→1 |
+| KEY3 | 保留未使用 |
 
 ## ⚙️ 构建与烧录
 

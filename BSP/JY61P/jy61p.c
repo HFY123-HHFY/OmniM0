@@ -337,23 +337,6 @@ void JY61P_ZAxisZero(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════
- * JY61P_GetYawFiltered — 偏航角 EMA 低通 + 尖峰抑制
- *
- * 两步处理：
- *   1. 尖峰检测：单帧 |diff| > YAW_SPIKE_THRESHOLD_DEG → 丢弃（传感器噪点）
- *   2. EMA 平滑：filtered += diff × YAW_EMA_ALPHA
- *
- * alpha 越大跟踪越快但对噪点越敏感。当前 alpha=0.15：
- *   响应 10° 阶跃 → 10 帧（100ms@100Hz）达稳态的 80%
- *   单帧 30° 尖峰 → 直接丢弃，不进入滤波
- *
- * 调用：Drive_YawSpeed / Spin_Control / Spin_IsDone（20ms ISR）。
- * ══════════════════════════════════════════════════════════════════════ */
-
-#define YAW_EMA_ALPHA            0.15f  /* EMA 系数：越小越平滑，0.15 → 15% 新 + 85% 旧 */
-#define YAW_SPIKE_THRESHOLD_DEG  20.0f  /* 单帧跳变超此值视为尖峰丢弃（100Hz 下 20° 物理不可能） */
-
-/* ══════════════════════════════════════════════════════════════════════
  * JY61P_GetYawFiltered — 偏航角 EMA 低通滤波（含 ±180° 回绕）
  *
  * filtered += (raw - filtered) × alpha

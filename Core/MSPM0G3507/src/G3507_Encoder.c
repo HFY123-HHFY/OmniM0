@@ -5,8 +5,9 @@
 #include "gpio.h"
 #include "ti/driverlib/dl_gpio.h"
 
-/* 编码器 EXTI 中断优先级（M0+ 仅 4 级：0~3） */
-#define G3507_ENCODER_EXTI_PRIO    2U
+/* 编码器 EXTI 中断优先级（统一在 SYSTEM/IrqPriority.h 管理） */
+#include "IrqPriority.h"
+#define G3507_ENCODER_EXTI_PRIO    IRQ_PRIO_ENCODER_EXTI
 #define G3507_ENCODER_EXTI_SUBPRIO 0U
 #include "ti/devices/msp/m0p/mspm0g350x.h"
 
@@ -217,6 +218,7 @@ void G3507_Encoder_SnapshotAll(void)
 {
 	uint8_t i;
 
+	__disable_irq();
 	for (i = 0U; i < G3507_ENCODER_MAX; ++i)
 	{
 		if (s_ctx[i].active == 0U)
@@ -224,12 +226,9 @@ void G3507_Encoder_SnapshotAll(void)
 			continue;
 		}
 
-		__disable_irq();
-		{
-			int32_t raw = s_encoderRaw[i];
-			s_encoderRaw[i] = 0;
-			s_encoderStable[i] = raw;
-		}
-		__enable_irq();
+		int32_t raw = s_encoderRaw[i];
+		s_encoderRaw[i] = 0;
+		s_encoderStable[i] = raw;
 	}
+	__enable_irq();
 }

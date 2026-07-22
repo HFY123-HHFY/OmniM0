@@ -23,7 +23,7 @@
 
 /*BSP硬件抽象层*/
 #include "LED.h"
-#include "Buzzer.h"   /* Buzzer_Task / Buzzer_Beep */
+#include "Buzzer.h"
 #include "KEY.h"
 #include "OLED.h"
 #include "Control.h"
@@ -34,7 +34,7 @@
 #include "jy61p.h"
 
 /* ── 调试开关 ── */
-#define DEBUG_PRINT_ENABLE  0U   /* 开启/关闭串口 printf 调试输出 */
+#define DEBUG_PRINT_ENABLE  1U   /* 开启/关闭串口 printf 调试输出 */
 #define DEBUG_OLED_ENABLE   1U   /* 开启/关闭 OLED 显示            */
 
 int main(void)
@@ -122,7 +122,7 @@ int main(void)
 		{
 			tasks.oled_100ms.flag = false;
 			// OLED_Clear();
-			OLED_Printf(0, 0, OLED_6X8, "T:%d Y%4.1f",Task_GetSelect(),JY61P_GetYawFiltered());
+			OLED_Printf(0, 0, OLED_6X8, "T:%d Y%4.1f",Task_GetSelect(),JY61P_GetYawFiltered() * 0.01f);
 			// OLED_Printf(78, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
 			// 	g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
 			// 	g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],

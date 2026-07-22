@@ -29,6 +29,9 @@
 #define IRQ_PRIO_USART2      3U   /* 低：预留                                     */
 #define IRQ_PRIO_USART4      3U   /* 低：未用                                     */
 
+/* ── 编码器 EXTI（GPIO 外部中断，模拟正交编码器）── */
+#define IRQ_PRIO_ENCODER_EXTI 2U   /* 中：编码器脉冲边沿捕获，略低于 TIMG0       */
+
 /* ── 其他 ── */
 #define IRQ_PRIO_MPU6050     3U   /* 低：MPU6050 外部中断（当前已注释未启用）      */
 #define IRQ_PRIO_DEFAULT     3U   /* 最低：未指定中断的缺省值                      */

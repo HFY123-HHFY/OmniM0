@@ -73,9 +73,9 @@ typedef struct
     uint16_t calib_black[8];       /* 黑色基准 ADC 值              */
     uint16_t threshold_white[8];   /* 白阈值 = (white*2+black)/3   */
     uint16_t threshold_black[8];   /* 黑阈值 = (white+black*2)/3   */
-    double   norm_factor[8];       /* 归一化系数 = bits/(w-b)      */
-
-    double   bits;                 /* ADC 量程（12-bit = 4096.0）  */
+    int32_t  norm_factor_q16[8];   /* 归一化系数 × 65536（Q16.16），ISR 整数安全 */
+    int32_t  bits;                 /* ADC 量程（12-bit = 4096）    */
+    int32_t  pos_filtered;         /* LinePosition EMA 滤波状态（每实例独立）*/
     uint8_t  calib_ready;          /* 1 = 校准已就绪               */
 } GrayADC_Sensor_t;
 
@@ -165,7 +165,7 @@ void GrayADC_PrintBits(const GrayADC_Sensor_t *sensor, void *usart);
  *
  * 用法：GrayADC_PrintLinePos(&g_graySensor, USART1);
  */
-void GrayADC_PrintLinePos(const GrayADC_Sensor_t *sensor, void *usart);
+void GrayADC_PrintLinePos(GrayADC_Sensor_t *sensor, void *usart);
 
 /*
  * 计算黑线位置 — 加权平均法 + EMA 低通滤波。
@@ -192,7 +192,7 @@ void GrayADC_PrintLinePos(const GrayADC_Sensor_t *sensor, void *usart);
  *   int32_t steer = PID_Direction_Calculate(error);
  *   TB6612_SetSpeed(baseSpeed + steer, baseSpeed - steer);
  */
-int32_t GrayADC_LinePosition(const GrayADC_Sensor_t *sensor);
+int32_t GrayADC_LinePosition(GrayADC_Sensor_t *sensor);
 
 #ifdef __cplusplus
 }

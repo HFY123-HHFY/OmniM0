@@ -18,7 +18,6 @@
  * ══════════════════════════════════════════════════════════════════════ */
 TaskManager tasks = {
     .buzzer_5ms = { .period = 5   },   /* 蜂鸣器/LED 调度    */
-    .jy61p_5ms = { .period = 5   },   /* JY61P 200Hz 过采样 */   /* JY61P 解析 @100Hz  */
     .key_20ms   = { .period = 20  },   /* 按键轮询           */
     .print_50ms = { .period = 50  },   /* 串口：调试打印     */
     .oled_100ms = { .period = 100 },   /* 显示：OLED 刷新    */
@@ -57,7 +56,7 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
         tick_5ms = 0U;
 
         GrayADC_Task(&g_graySensor);
-        JY61P_Task();   /* ★ 偏航角刷新放 ISR：消除主循环延迟抖动，和灰度对齐时序 */
+        JY61P_Task();   /* 偏航角数据包 */
 
         /* 出入线检测 → 互斥置位：一方触发则清零对方，保证两者不同时为 1 */
         if (GrayDetect_EnterLine()) { s_gray_enter_fired = 1U; s_gray_exit_fired = 0U; }
@@ -84,12 +83,6 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     {
         tasks.buzzer_5ms.tick = 0U;
         tasks.buzzer_5ms.flag = true;
-    }
-
-    if (++tasks.jy61p_5ms.tick >= tasks.jy61p_5ms.period)
-    {
-        tasks.jy61p_5ms.tick = 0U;
-        tasks.jy61p_5ms.flag = true;
     }
 
     if (++tasks.key_20ms.tick >= tasks.key_20ms.period)

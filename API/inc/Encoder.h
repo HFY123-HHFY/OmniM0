@@ -72,8 +72,9 @@ void API_Encoder_Register(const API_Encoder_Config_t *configTable, uint8_t count
 void API_Encoder_Init(API_Encoder_Id_t id);
 
 /*
- * 读取编码器速度：返回自上次读取后的计数值增量（带方向），并清零计数器。
- * 调用方应在固定周期内调用以获得速度意义。
+ * 读取编码器速度：返回最近一次 SnapshotAll 快照的计数值（带方向）。
+ * 计数器清零由 SnapshotAll 在固定周期 ISR（20ms）中完成，
+ * 调用方应在 SnapshotAll 之后立即读取，以获得恒定采样窗口的速度值。
  */
 int16_t API_Encoder_GetSpeed(API_Encoder_Id_t id);
 

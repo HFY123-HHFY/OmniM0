@@ -27,7 +27,8 @@ typedef struct
     float gyro_z;       /* 角速度 Z（°/s）     */
     float roll;         /* 滚转角（°）         */
     float pitch;        /* 俯仰角（°）         */
-    float yaw;          /* 偏航角（°）         */
+    float yaw;          /* 偏航角（°，供主循环 printf/OLED 读取） */
+    int32_t yaw_cdeg;   /* 偏航角（cdeg = °×100，供 ISR 整数路径，无浮点开销） */
     float temp;         /* 温度（℃）           */
     uint8_t update_flags;
 } JY61P_Data_t;
@@ -101,12 +102,15 @@ float JY61P_GetTemp(void);
 void JY61P_ZAxisZero(void);
 
 /*
- * 偏航角 EMA 低通滤波（含 ±180° 回绕）。
+ * 偏航角 EMA 低通滤波（含 ±180° 回绕，纯整数，ISR 安全）。
  *
- * EMA 系数 0.3：单帧跳变只贡献 30%，普通噪声自然衰减。
+ * EMA 系数 ≈0.3：单帧跳变只贡献 30%，普通噪声自然衰减。
  * 无尖峰检测 / 无死区 —— 纯 EMA，不会卡死在旧值。
+ *
+ * 返回值：cdeg（°×100），范围 ±18000。
+ * 内部全部 int32_t 运算，M0+ 无 FPU 开销，可在 ISR 中安全调用。
  */
-float JY61P_GetYawFiltered(void);
+int32_t JY61P_GetYawFiltered(void);
 
 #ifdef __cplusplus
 }

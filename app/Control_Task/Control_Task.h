@@ -18,7 +18,6 @@ typedef struct {
 
 typedef struct {
     TaskBlock buzzer_5ms;     /* 蜂鸣器/LED 非阻塞调度          */
-    TaskBlock jy61p_5ms;     /* JY61P 数据解析，匹配 100Hz 输出 */
     TaskBlock key_20ms;       /* 按键轮询（消抖在 ISR 1ms 完成）*/
     TaskBlock print_50ms;     /* 串口：调试打印                 */
     TaskBlock oled_100ms;     /* 显示：OLED 刷新                */

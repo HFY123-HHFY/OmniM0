@@ -29,7 +29,8 @@ typedef enum
 
 #define API_PWM_CORE_TIMA0  (2U)
 #define API_PWM_CORE_TIMA1  (3U)
-#define API_PWM_CORE_TIMG8  (4U)   /* TIMG8：通用定时器 PWM（当前板级 PB7+PB15） */
+#define API_PWM_CORE_TIMG8  (4U)   /* TIMG8：通用定时器 PWM（PCBV3.0 PB7+PB15）        */
+#define API_PWM_CORE_TIMG6  (5U)   /* TIMG6：通用定时器 PWM（预留 PA29+PA30）           */
 #define API_PWM_CORE_CCP0   (0U)
 #define API_PWM_CORE_CCP1   (1U)
 

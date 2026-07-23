@@ -34,7 +34,7 @@
 #include "jy61p.h"
 
 /* ── 调试开关 ── */
-#define DEBUG_PRINT_ENABLE  1U   /* 开启/关闭串口 printf 调试输出 */
+#define DEBUG_PRINT_ENABLE  0U   /* 开启/关闭串口 printf 调试输出 */
 #define DEBUG_OLED_ENABLE   1U   /* 开启/关闭 OLED 显示            */
 
 int main(void)
@@ -65,6 +65,8 @@ int main(void)
 	API_USART_Init(API_USART3, 115200U); // 初始化 USART3
 	API_USART_Init(API_USART4, 115200U); // 初始化 USART4，JY61P 陀螺仪
 	API_PWM_Init(API_PWM_TIM1, 2000U - 1U, 1U - 1U); /* TIMG8@ULPCLK 40MHz: 40M/1/2000 = 20kHz，占空比 0-2000 */
+	API_PWM_Init(API_PWM_TIM2, 8000U - 1U, 1U - 1U); /* TIMG6@PD1 BUSCLK 80MHz: 80M/1/8000 = 10kHz，占空比 0-8000 */
+	API_PWM_Init(API_PWM_TIM3, 8000U - 1U, 1U - 1U); /* TIMA0@PD1 BUSCLK 80MHz: 80M/1/8000 = 10kHz，占空比 0-8000 */
 	API_ADC_Init(API_ADC1); // 初始化 ADC1
 	GrayADC_Init();							/* GrayADC 硬件 + digital_bits 全白（必须在 TIM 前） */
 	API_TIM_Init(API_TIM1, 1U); /* TIMG0 系统时基：每 1ms 触发一次中断 */
@@ -123,11 +125,11 @@ int main(void)
 			tasks.oled_100ms.flag = false;
 			// OLED_Clear();
 			OLED_Printf(0, 0, OLED_6X8, "T:%d Y%4.1f",Task_GetSelect(),JY61P_GetYawFiltered() * 0.01f);
-			// OLED_Printf(78, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-			// 	g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
-			// 	g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
-			// 	g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
-			// 	g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]);
+			OLED_Printf(78, 48, OLED_6X8, "%d%d%d%d%d%d%d%d",
+				g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
+				g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
+				g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
+				g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]);
 			// OLED_Printf(0, 16, OLED_6X8, "L:%d  R:%d", Encoder1_Speed, Encoder2_Speed);
 			// OLED_Printf(64, 16, OLED_6X8, "P:%d T:%d", Task_GetPos(), Task_GetActive());
 			// OLED_Printf(0, 32, OLED_6X8, "H:%d", s_gray_enter_fired);

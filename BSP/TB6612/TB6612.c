@@ -145,3 +145,15 @@ void TB6612_SetSpeed(int16_t speedA, int16_t speedB)
 	// 设置占空比
 	API_PWM_Setcom(TB6612_PWM_TIM, TB6612_PWM_CH_B, dutyB);
 }
+
+/*
+	测试用：
+	API_PWM_Setcom(API_PWM_TIM1, API_PWM_CH1, 1000); //B15 - 50%
+	API_PWM_Setcom(API_PWM_TIM1, API_PWM_CH2, 1500); //B7 - 75%
+
+	API_PWM_Setcom(API_PWM_TIM2, API_PWM_CH1, 4000); //A29 - 50%
+	API_PWM_Setcom(API_PWM_TIM2, API_PWM_CH2, 6000); //A30 - 75%
+
+	API_PWM_Setcom(API_PWM_TIM3, API_PWM_CH1, 4000); //A0 - 50%
+	API_PWM_Setcom(API_PWM_TIM3, API_PWM_CH2, 6000); //A1 - 75%
+*/

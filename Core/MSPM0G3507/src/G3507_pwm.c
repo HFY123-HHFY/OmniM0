@@ -10,9 +10,9 @@
 /*
  * G3507 PWM 底层实现。
  *
- * 支持两种定时器类型：
+ * 支持三种定时器类型：
  *   - TIMA0/TIMA1：高级定时器（DL_TimerA_* API）
- *   - TIMG8：      通用定时器（DL_TimerG_* API）
+ *   - TIMG6/TIMG8：通用定时器（DL_TimerG_* API）
  *
  * 注意：DL_TimerA_* 和 DL_TimerG_* 都是 DL_Timer_* 统一 API 的宏别名，
  *       但为代码可读性，按定时器类型显式区分。
@@ -54,6 +54,9 @@ static G3507_PWM_Map_t G3507_PWM_GetMap(uint8_t coreTimId)
 	case API_PWM_CORE_TIMG8:
 		map.regs = TIMG8;   /* TIMG8 本身就是 GPTIMER_Regs* */
 		break;
+	case API_PWM_CORE_TIMG6:
+		map.regs = TIMG6;   /* TIMG6 本身就是 GPTIMER_Regs* */
+		break;
 	default:
 		break;
 	}
@@ -64,7 +67,7 @@ static G3507_PWM_Map_t G3507_PWM_GetMap(uint8_t coreTimId)
 /* 仅用于判断定时器类型（TIMA vs TIMG），控制电源上电/复位分支 */
 static uint8_t G3507_PWM_IsTimerG(uint8_t coreTimId)
 {
-	return (coreTimId == API_PWM_CORE_TIMG8) ? 1U : 0U;
+	return ((coreTimId == API_PWM_CORE_TIMG8) || (coreTimId == API_PWM_CORE_TIMG6)) ? 1U : 0U;
 }
 
 /*
@@ -118,39 +121,60 @@ void G3507_PWM_ConfigPin(uint8_t coreTimId, uint8_t coreChannel)
 	{
 		if (coreChannel == API_PWM_CORE_CCP0)
 		{
-			DL_GPIO_initPeripheralOutputFunction(G3507_PWM_CCP0_IOMUX,
-			                                     G3507_PWM_CCP0_FUNC);
-			DL_GPIO_enableOutput(G3507_PWM_CCP0_PORT,
-			                     G3507_PWM_CCP0_PIN);
+			DL_GPIO_initPeripheralOutputFunction(G3507_PWM1_CCP0_IOMUX,
+			                                     G3507_PWM1_CCP0_FUNC);
+			DL_GPIO_enableOutput(G3507_PWM1_CCP0_PORT,
+			                     G3507_PWM1_CCP0_PIN);
 		}
 		else if (coreChannel == API_PWM_CORE_CCP1)
 		{
-			DL_GPIO_initPeripheralOutputFunction(G3507_PWM_CCP1_IOMUX,
-			                                     G3507_PWM_CCP1_FUNC);
-			DL_GPIO_enableOutput(G3507_PWM_CCP1_PORT,
-			                     G3507_PWM_CCP1_PIN);
+			DL_GPIO_initPeripheralOutputFunction(G3507_PWM1_CCP1_IOMUX,
+			                                     G3507_PWM1_CCP1_FUNC);
+			DL_GPIO_enableOutput(G3507_PWM1_CCP1_PORT,
+			                     G3507_PWM1_CCP1_PIN);
 		}
 		return;
 	}
 
-	/* ── TIMA1（PCBV1.0：PA16=CCP1, PA17=CCP0）── */
-	// if (coreTimId == API_PWM_CORE_TIMA1)
-	// {
-	// 	if (coreChannel == API_PWM_CORE_CCP0)
-	// 	{
-	// 		DL_GPIO_initPeripheralOutputFunction(G3507_PWM_TIMA1_CH0_IOMUX,
-	// 		                                     G3507_PWM_TIMA1_CH0_FUNC);
-	// 		DL_GPIO_enableOutput(G3507_PWM_TIMA1_CH0_PORT,
-	// 		                     G3507_PWM_TIMA1_CH0_PIN);
-	// 	}
-	// 	else if (coreChannel == API_PWM_CORE_CCP1)
-	// 	{
-	// 		DL_GPIO_initPeripheralOutputFunction(G3507_PWM_TIMA1_CH1_IOMUX,
-	// 		                                     G3507_PWM_TIMA1_CH1_FUNC);
-	// 		DL_GPIO_enableOutput(G3507_PWM_TIMA1_CH1_PORT,
-	// 		                     G3507_PWM_TIMA1_CH1_PIN);
-	// 	}
-	// }
+	/* ── TIMG6 引脚（预留：PA29=CCP0, PA30=CCP1）── */
+	if (coreTimId == API_PWM_CORE_TIMG6)
+	{
+		if (coreChannel == API_PWM_CORE_CCP0)
+		{
+			DL_GPIO_initPeripheralOutputFunction(G3507_PWM2_CCP0_IOMUX,
+			                                     G3507_PWM2_CCP0_FUNC);
+			DL_GPIO_enableOutput(G3507_PWM2_CCP0_PORT,
+			                     G3507_PWM2_CCP0_PIN);
+		}
+		else if (coreChannel == API_PWM_CORE_CCP1)
+		{
+			DL_GPIO_initPeripheralOutputFunction(G3507_PWM2_CCP1_IOMUX,
+			                                     G3507_PWM2_CCP1_FUNC);
+			DL_GPIO_enableOutput(G3507_PWM2_CCP1_PORT,
+			                     G3507_PWM2_CCP1_PIN);
+		}
+		return;
+	}
+
+	/* ── TIMA0 引脚（预留：PA0=CCP0, PA1=CCP1）── */
+	if (coreTimId == API_PWM_CORE_TIMA0)
+	{
+		if (coreChannel == API_PWM_CORE_CCP0)
+		{
+			DL_GPIO_initPeripheralOutputFunction(G3507_PWM3_CCP0_IOMUX,
+			                                     G3507_PWM3_CCP0_FUNC);
+			DL_GPIO_enableOutput(G3507_PWM3_CCP0_PORT,
+			                     G3507_PWM3_CCP0_PIN);
+		}
+		else if (coreChannel == API_PWM_CORE_CCP1)
+		{
+			DL_GPIO_initPeripheralOutputFunction(G3507_PWM3_CCP1_IOMUX,
+			                                     G3507_PWM3_CCP1_FUNC);
+			DL_GPIO_enableOutput(G3507_PWM3_CCP1_PORT,
+			                     G3507_PWM3_CCP1_PIN);
+		}
+		return;
+	}
 }
 
 /* ══════════════════════════════════════════════════════════════════════

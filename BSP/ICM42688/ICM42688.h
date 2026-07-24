@@ -91,9 +91,12 @@ typedef enum
  * ICM42688_Init — 初始化（WHO_AM_I 校验 + 软复位 + 配置 + 上电）
  *
  * 需在 API_SPI_Init() 之后调用。
- * 失败死循环。
+ *
+ * @retval 1  初始化成功
+ * @retval 0  WHO_AM_I 不匹配（芯片不存在/焊接不良/SPI 通信异常）
+ *            系统可继续运行（JY61P fallback），但 ReadSensor 不工作
  */
-void ICM42688_Init(void);
+uint8_t ICM42688_Init(void);
 
 /*
  * ICM42688_ReadSensor — 一次 SPI burst 读取全部传感器数据（供 ISR 调用）

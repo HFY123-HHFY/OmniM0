@@ -82,7 +82,8 @@ int main(void)
 	API_SPI_Init();						/* 软件 SPI 初始化 */
 	// App_I2C_ScanOnce();				/* 开机执行一次 I2C 扫描 */
 	// App_SPI_TestOnce();				/* 开机执行一次 SPI 测试 */
-	ICM42688_Init();					/* ICM42688 陀螺仪（SPI2, 5MHz DelayOff） */
+	uint8_t ICM42688 = ICM42688_Init(); /* 初始化ICM42688 陀螺仪（SPI2, 5MHz） */
+	usart_printf(USART1, "ICM42688= %d\r\n", ICM42688);
 
 /* BSP硬件抽象层初始化*/
 	LED_Init(LED_LOW); // 初始化LED-低电平
@@ -93,8 +94,8 @@ int main(void)
 	API_Encoder_Init(API_ENCODER_1); 		/* 编码器 1 初始化 */
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
-	JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
-	Buzzer_Beep(200);  /* 蜂鸣器短鸣 200ms，非阻塞 */
+	// JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
+	// Buzzer_Beep(200);  /* 蜂鸣器短鸣 200ms，非阻塞 */
 
 	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 150.0f, 0.0f, 15.0f);
 	// Set_PID(&direction_pid,  1.0f, 0.002f, 0.01f);      /* 灰度方向环参数    */
@@ -102,6 +103,7 @@ int main(void)
 
 	while (1)
 	{
+		LED_Control(LED1, LED_HIGH);
 		/* ── 蜂鸣器/LED 调度 @5ms ── */
 		if (tasks.buzzer_5ms.flag)
 		{
@@ -138,7 +140,6 @@ int main(void)
 			LED_Control(LED3, LED_LOW);
 			AT4950_SetSpeed(0,0);
 		}
-
 		/* 串口打印 50ms */
 #if (DEBUG_PRINT_ENABLE == 1U)
 		if (tasks.print_50ms.flag)

@@ -76,7 +76,7 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
 		G3507_Encoder_SnapshotAll();
 		Encoder1_Speed =  API_Encoder_GetSpeed(API_ENCODER_1);
 		Encoder2_Speed = -API_Encoder_GetSpeed(API_ENCODER_2);
-        Task_Run();
+        // Task_Run();
 	}
 
     /* ── 4. TaskManager：任务标志位（主循环消费）── */
@@ -124,7 +124,7 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
         usart_irq_dispatch_by_id(id, &data, &rxValid);
         if (rxValid != 0U)
         {
-            if (id == API_USART4)
+            if (id == API_USART2)
             {
                 JY61P_RxPush((uint8_t)data);  /* 只入队，解析交给主循环 JY61P_Task() */
             }

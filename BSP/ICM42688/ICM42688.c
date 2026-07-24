@@ -83,7 +83,7 @@ static void ICM42688_BurstReadFast(uint8_t reg, uint8_t *buf, uint8_t len)
  * 初始化
  * ══════════════════════════════════════════════════════════ */
 
-void ICM42688_Init(void)
+uint8_t ICM42688_Init(void)
 {
 	uint8_t whoami, retry;
 
@@ -92,7 +92,7 @@ void ICM42688_Init(void)
 	API_SPI_SetSpeed(ICM42688_SPI_SPEED);
 	API_SPI_DelayOff();
 
-	/* ── WHO_AM_I（重试最多 50 次，每次等 10ms）── */
+	/* ── WHO_AM_I（重试最多 50 次，每次等 10ms，合计 500ms）── */
 	for (retry = 0U; retry < 50U; ++retry)
 	{
 		whoami = ICM42688_ReadReg(ICM42688_WHO_AM_I);
@@ -101,7 +101,8 @@ void ICM42688_Init(void)
 	}
 	if (whoami != ICM42688_WHO_AM_I_VAL)
 	{
-		while (1) { }   /* 器件未就绪，死等 */
+		s_inited = 0U;   /* 标记未初始化，ReadSensor/GetXxx 将跳过 */
+		return 0U;       /* 返回失败，调用方可做 LED 告警 / fallback */
 	}
 
 	/* ── 软复位 ── */
@@ -129,6 +130,8 @@ void ICM42688_Init(void)
 	s_yaw       = 0.0f;
 	s_firstRead = 1U;
 	s_inited    = 1U;
+
+	return 1U;   /* 成功 */
 }
 
 /* ══════════════════════════════════════════════════════════

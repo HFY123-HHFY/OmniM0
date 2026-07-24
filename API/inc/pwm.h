@@ -28,11 +28,14 @@ typedef enum
 } API_PWM_Channel_t;
 
 #define API_PWM_CORE_TIMA0  (2U)
-#define API_PWM_CORE_TIMA1  (3U)
-#define API_PWM_CORE_TIMG8  (4U)   /* TIMG8：通用定时器 PWM（PCBV3.0 PB7+PB15）        */
-#define API_PWM_CORE_TIMG6  (5U)   /* TIMG6：通用定时器 PWM（预留 PA29+PA30）           */
+#define API_PWM_CORE_TIMA1  (3U)   /* TIMA1：高级定时器 PWM（TIM4, PA28+PA31, PD1）  */
+#define API_PWM_CORE_TIMG8  (4U)   /* TIMG8：通用定时器 PWM（TIM5, PA29+PA30, PD0）   */
+#define API_PWM_CORE_TIMG6  (5U)   /* TIMG6：通用定时器 PWM（TIM2, PB7, PD1）         */
+#define API_PWM_CORE_TIMG7  (6U)   /* TIMG7：通用定时器 PWM（TIM1, PB15, PD1）        */
 #define API_PWM_CORE_CCP0   (0U)
 #define API_PWM_CORE_CCP1   (1U)
+#define API_PWM_CORE_CCP2   (2U)
+#define API_PWM_CORE_CCP3   (3U)
 
 typedef struct
 {

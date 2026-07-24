@@ -57,6 +57,9 @@ static G3507_PWM_Map_t G3507_PWM_GetMap(uint8_t coreTimId)
 	case API_PWM_CORE_TIMG6:
 		map.regs = TIMG6;   /* TIMG6 本身就是 GPTIMER_Regs* */
 		break;
+	case API_PWM_CORE_TIMG7:
+		map.regs = TIMG7;   /* TIMG7 本身就是 GPTIMER_Regs* */
+		break;
 	default:
 		break;
 	}
@@ -67,7 +70,7 @@ static G3507_PWM_Map_t G3507_PWM_GetMap(uint8_t coreTimId)
 /* 仅用于判断定时器类型（TIMA vs TIMG），控制电源上电/复位分支 */
 static uint8_t G3507_PWM_IsTimerG(uint8_t coreTimId)
 {
-	return ((coreTimId == API_PWM_CORE_TIMG8) || (coreTimId == API_PWM_CORE_TIMG6)) ? 1U : 0U;
+	return ((coreTimId == API_PWM_CORE_TIMG8) || (coreTimId == API_PWM_CORE_TIMG6) || (coreTimId == API_PWM_CORE_TIMG7)) ? 1U : 0U;
 }
 
 /*
@@ -116,8 +119,8 @@ static uint8_t G3507_PWM_GetClockDivider(uint32_t divisor,
  * ══════════════════════════════════════════════════════════════════════ */
 void G3507_PWM_ConfigPin(uint8_t coreTimId, uint8_t coreChannel)
 {
-	/* ── TIMG8 引脚（PCBV3.0：PB15=CCP0→PWMA, PB7=CCP1→PWMB）── */
-	if (coreTimId == API_PWM_CORE_TIMG8)
+	/* ── TIMG7 引脚（PB15=CCP0, TIM1-CH1）── */
+	if (coreTimId == API_PWM_CORE_TIMG7)
 	{
 		if (coreChannel == API_PWM_CORE_CCP0)
 		{
@@ -126,7 +129,13 @@ void G3507_PWM_ConfigPin(uint8_t coreTimId, uint8_t coreChannel)
 			DL_GPIO_enableOutput(G3507_PWM1_CCP0_PORT,
 			                     G3507_PWM1_CCP0_PIN);
 		}
-		else if (coreChannel == API_PWM_CORE_CCP1)
+		return;
+	}
+
+	/* ── TIMG6 引脚（PB7=CCP1, TIM2-CH1）── */
+	if (coreTimId == API_PWM_CORE_TIMG6)
+	{
+		if (coreChannel == API_PWM_CORE_CCP1)
 		{
 			DL_GPIO_initPeripheralOutputFunction(G3507_PWM1_CCP1_IOMUX,
 			                                     G3507_PWM1_CCP1_FUNC);
@@ -136,28 +145,28 @@ void G3507_PWM_ConfigPin(uint8_t coreTimId, uint8_t coreChannel)
 		return;
 	}
 
-	/* ── TIMG6 引脚（预留：PA29=CCP0, PA30=CCP1）── */
-	if (coreTimId == API_PWM_CORE_TIMG6)
+	/* ── TIMA0 引脚（PB13=CCP3, PB9=CCP1, TIM3）── */
+	if (coreTimId == API_PWM_CORE_TIMA0)
 	{
-		if (coreChannel == API_PWM_CORE_CCP0)
-		{
-			DL_GPIO_initPeripheralOutputFunction(G3507_PWM2_CCP0_IOMUX,
-			                                     G3507_PWM2_CCP0_FUNC);
-			DL_GPIO_enableOutput(G3507_PWM2_CCP0_PORT,
-			                     G3507_PWM2_CCP0_PIN);
-		}
-		else if (coreChannel == API_PWM_CORE_CCP1)
+		if (coreChannel == API_PWM_CORE_CCP1)
 		{
 			DL_GPIO_initPeripheralOutputFunction(G3507_PWM2_CCP1_IOMUX,
 			                                     G3507_PWM2_CCP1_FUNC);
 			DL_GPIO_enableOutput(G3507_PWM2_CCP1_PORT,
 			                     G3507_PWM2_CCP1_PIN);
 		}
+		else if (coreChannel == API_PWM_CORE_CCP3)
+		{
+			DL_GPIO_initPeripheralOutputFunction(G3507_PWM2_CCP3_IOMUX,
+			                                     G3507_PWM2_CCP3_FUNC);
+			DL_GPIO_enableOutput(G3507_PWM2_CCP3_PORT,
+			                     G3507_PWM2_CCP3_PIN);
+		}
 		return;
 	}
 
-	/* ── TIMA0 引脚（预留：PA0=CCP0, PA1=CCP1）── */
-	if (coreTimId == API_PWM_CORE_TIMA0)
+	/* ── TIMA1 引脚（PA28=CCP0, PA31=CCP1, TIM4）── */
+	if (coreTimId == API_PWM_CORE_TIMA1)
 	{
 		if (coreChannel == API_PWM_CORE_CCP0)
 		{
@@ -172,6 +181,26 @@ void G3507_PWM_ConfigPin(uint8_t coreTimId, uint8_t coreChannel)
 			                                     G3507_PWM3_CCP1_FUNC);
 			DL_GPIO_enableOutput(G3507_PWM3_CCP1_PORT,
 			                     G3507_PWM3_CCP1_PIN);
+		}
+		return;
+	}
+
+	/* ── TIMG8 引脚（PA29=CCP0, PA30=CCP1, TIM5, PD0）── */
+	if (coreTimId == API_PWM_CORE_TIMG8)
+	{
+		if (coreChannel == API_PWM_CORE_CCP0)
+		{
+			DL_GPIO_initPeripheralOutputFunction(G3507_PWM4_CCP0_IOMUX,
+			                                     G3507_PWM4_CCP0_FUNC);
+			DL_GPIO_enableOutput(G3507_PWM4_CCP0_PORT,
+			                     G3507_PWM4_CCP0_PIN);
+		}
+		else if (coreChannel == API_PWM_CORE_CCP1)
+		{
+			DL_GPIO_initPeripheralOutputFunction(G3507_PWM4_CCP1_IOMUX,
+			                                     G3507_PWM4_CCP1_FUNC);
+			DL_GPIO_enableOutput(G3507_PWM4_CCP1_PORT,
+			                     G3507_PWM4_CCP1_PIN);
 		}
 		return;
 	}
@@ -298,15 +327,47 @@ void G3507_PWM_InitTimer(uint8_t coreTimId, uint16_t arr, uint16_t psc)
 		                            DL_TIMER_CZC_CCCTL0_ZCOND,
 		                            DL_TIMER_CAC_CCCTL0_ACOND,
 		                            DL_TIMER_CLC_CCCTL0_LCOND);
-		DL_TimerA_setCCPDirection(map.regs, (DL_TIMER_CC0_OUTPUT | DL_TIMER_CC1_OUTPUT));
+		DL_TimerA_setCCPDirection(map.regs, (DL_TIMER_CC0_OUTPUT | DL_TIMER_CC1_OUTPUT |
+		                                     DL_TIMER_CC2_OUTPUT | DL_TIMER_CC3_OUTPUT));
 		DL_TimerA_setCCPOutputDisabled(map.regs,
 		                               DL_TIMER_CCP_DIS_OUT_SET_BY_OCTL,
 		                               DL_TIMER_CCP_DIS_OUT_SET_BY_OCTL);
+		/* CC2 / CC3：TIMA0 额外两个通道 */
+		DL_Timer_setCaptureCompareAction(map.regs,
+		    (DL_TIMER_CC_LACT_CCP_LOW | DL_TIMER_CC_CDACT_CCP_HIGH),
+		    DL_TIMER_CC_2_INDEX);
+		DL_Timer_setCaptureCompareCtl(map.regs,
+		    DL_TIMER_CC_MODE_COMPARE, 0U, DL_TIMER_CC_2_INDEX);
+		DL_Timer_setCaptureCompareInput(map.regs,
+		    DL_TIMER_CC_INPUT_INV_NOINVERT, DL_TIMER_CC_IN_SEL_CCPX,
+		    DL_TIMER_CC_2_INDEX);
+		DL_Timer_setCaptureCompareOutCtl(map.regs,
+		    DL_TIMER_CC_OCTL_INIT_VAL_LOW, DL_TIMER_CC_OCTL_INV_OUT_DISABLED,
+		    DL_TIMER_CC_OCTL_SRC_FUNCVAL, DL_TIMER_CC_2_INDEX);
+		DL_Timer_setCaptCompUpdateMethod(map.regs,
+		    DL_TIMER_CC_UPDATE_METHOD_IMMEDIATE, DL_TIMER_CC_2_INDEX);
+
+		DL_Timer_setCaptureCompareAction(map.regs,
+		    (DL_TIMER_CC_LACT_CCP_LOW | DL_TIMER_CC_CDACT_CCP_HIGH),
+		    DL_TIMER_CC_3_INDEX);
+		DL_Timer_setCaptureCompareCtl(map.regs,
+		    DL_TIMER_CC_MODE_COMPARE, 0U, DL_TIMER_CC_3_INDEX);
+		DL_Timer_setCaptureCompareInput(map.regs,
+		    DL_TIMER_CC_INPUT_INV_NOINVERT, DL_TIMER_CC_IN_SEL_CCPX,
+		    DL_TIMER_CC_3_INDEX);
+		DL_Timer_setCaptureCompareOutCtl(map.regs,
+		    DL_TIMER_CC_OCTL_INIT_VAL_LOW, DL_TIMER_CC_OCTL_INV_OUT_DISABLED,
+		    DL_TIMER_CC_OCTL_SRC_FUNCVAL, DL_TIMER_CC_3_INDEX);
+		DL_Timer_setCaptCompUpdateMethod(map.regs,
+		    DL_TIMER_CC_UPDATE_METHOD_IMMEDIATE, DL_TIMER_CC_3_INDEX);
+
 
 		DL_TimerA_setTimerCount(map.regs, 0U);
 		/* CC 初值 = LOAD+1（period）：比较永不触发 → 上电输出恒低（0% 占空比） */
 		DL_TimerA_setCaptureCompareValue(map.regs, pwmPeriod, DL_TIMER_CC_0_INDEX);
 		DL_TimerA_setCaptureCompareValue(map.regs, pwmPeriod, DL_TIMER_CC_1_INDEX);
+		DL_TimerA_setCaptureCompareValue(map.regs, pwmPeriod, DL_TIMER_CC_2_INDEX);
+		DL_TimerA_setCaptureCompareValue(map.regs, pwmPeriod, DL_TIMER_CC_3_INDEX);
 		DL_TimerA_enableClock(map.regs);
 		DL_TimerA_startCounter(map.regs);
 	}
@@ -342,6 +403,14 @@ void G3507_PWM_SetCCR(uint8_t coreTimId, uint8_t coreChannel, uint16_t ccr)
 	else if (coreChannel == API_PWM_CORE_CCP1)
 	{
 		ccIndex = DL_TIMER_CC_1_INDEX;
+	}
+	else if (coreChannel == API_PWM_CORE_CCP2)
+	{
+		ccIndex = DL_TIMER_CC_2_INDEX;
+	}
+	else if (coreChannel == API_PWM_CORE_CCP3)
+	{
+		ccIndex = DL_TIMER_CC_3_INDEX;
 	}
 	else
 	{

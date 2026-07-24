@@ -120,12 +120,6 @@ static const OLED_SpiCtrlConfig_t s_oledSpiCtrlTable[] =
 };
 #undef ENROLL_OLED_SPI_CTRL_ITEM
 
-/* MPU6050 EXTI 表：登记外部中断输入引脚。 */
-static const API_EXTI_Config_t s_mpuExtiTable[] =
-{
-	{ 0U, HW_MPU6050_INT_PORT, HW_MPU6050_INT_PIN }
-};
-
 /* TB6612 配置表：把 HW_TB6612_MAP 展开成 TB6612_Config_t。 */
 #define ENROLL_TB6612_ITEM(ain1Port, ain1Pin, ain2Port, ain2Pin, bin1Port, bin1Pin, bin2Port, bin2Pin) \
 	{ ain1Port, ain1Pin, ain2Port, ain2Pin, bin1Port, bin1Pin, bin2Port, bin2Pin },
@@ -223,21 +217,6 @@ void Enroll_KEY_Register(void)
 void Enroll_OLED_Register(void)
 {
 	OLED_RegisterSpiCtrl(s_oledSpiCtrlTable, HW_OLED_SPI_CTRL_COUNT);
-}
-
-/*
- * MPU6050 注册：
- * 1) 登记 EXTI 资源表；
- * 2) 绑定 MPU6050 中断回调；
- * 3) 配置触发沿与优先级。
- */
-void Enroll_MPU6050_Register(void)
-{
-	API_EXTI_Register(s_mpuExtiTable, 1U);
-	/* 同一 id 可继续追加其他回调。 */
-	API_EXTI_AddIrqHandler(s_mpuExtiTable[0].id, (API_EXTI_IrqHandler_t)MPU6050_EXTI_Callback, NULL);
-	/* API_EXTI_AddIrqHandler(s_mpuExtiTable[0].id, Other_EXTI_Callback, userPtr); */
-	API_EXTI_Init(s_mpuExtiTable[0].id, API_EXTI_TRIGGER_RISING, IRQ_PRIO_MPU6050, IRQ_SUB_PRIO_MPU6050);
 }
 
 /* TB6612 注册 */

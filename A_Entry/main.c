@@ -28,6 +28,7 @@
 #include "OLED.h"
 #include "Control.h"
 #include "TB6612.h"
+#include "AT4950.h"
 #include "gray_adc.h"
 #include "MPU6050.h"
 #include "MPU6050_Int.h"
@@ -64,11 +65,12 @@ int main(void)
 	API_USART_Init(API_USART2, 115200U); // 初始化 USART2-JY61P 陀螺仪
 	API_USART_Init(API_USART3, 115200U); // 初始化 USART3-无线串口调试
 	API_USART_Init(API_USART4, 115200U); // 初始化 USART4-预留串口
-	API_PWM_Init(API_PWM_TIM1, 4000U - 1U, 1U - 1U); /* TIMG7@PD1 BUSCLK 80MHz: 80M/1/4000 = 20kHz，占空比 0-4000 */
-	API_PWM_Init(API_PWM_TIM2, 4000U - 1U, 1U - 1U); /* TIMG6@PD1 BUSCLK 80MHz: 80M/1/4000 = 20kHz，占空比 0-4000 */
-	API_PWM_Init(API_PWM_TIM3, 4000U - 1U, 1U - 1U); /* TIMA0@PD1 BUSCLK 80MHz: 80M/1/4000 = 20kHz，占空比 0-4000 */
-	API_PWM_Init(API_PWM_TIM4, 4000U - 1U, 1U - 1U); /* TIMA1@PD1 BUSCLK 80MHz: 80M/1/4000 = 20kHz，占空比 0-4000 */
-	API_PWM_Init(API_PWM_TIM5, 2000U - 1U, 1U - 1U); /* TIMG8@PD0 ULPCLK 40MHz: 40M/1/2000 = 20kHz，占空比 0-2000 */
+	API_PWM_Init(API_PWM_TIM1, 4000U - 1U, 1U - 1U); /* TIMG7@PD1 电机A相 */
+	API_PWM_Init(API_PWM_TIM2, 4000U - 1U, 1U - 1U); /* TIMG6@PD1 电机A相 */
+	API_PWM_Init(API_PWM_TIM3, 4000U - 1U, 1U - 1U); /* TIMA0@PD1 电机B相 */
+	API_PWM_Init(API_PWM_TIM4, 4000U - 1U, 1U - 1U); /* TIMA1@PD1 预留PWM */
+	// API_PWM_Init(API_PWM_TIM5, 2000U - 1U, 1U - 1U); /* TIMG8@PD0 预留PWM(非必要不启动) */
+	AT4950_Init();							/* 电机驱动上电刹车，防止误触发 */
 	API_ADC_Init(API_ADC1); // 初始化 ADC1
 	GrayADC_Init();							/* GrayADC 硬件 + digital_bits 全白（必须在 TIM 前） */
 	API_TIM_Init(API_TIM1, 1U); /* TIMG0 系统时基：每 1ms 触发一次中断 */
@@ -97,21 +99,6 @@ int main(void)
 
 	while (1)
 	{
-		/* ── PWM 测试：全 20kHz ─────────────────────────────────── */
-		/* PD1(80MHz): period=4000 → 50%=2000, 75%=3000            */
-		/* PD0(40MHz): period=2000 → 50%=1000, 75%=1500            */
-		API_PWM_Setcom(API_PWM_TIM1, API_PWM_CH1, 2000); //B15 TIMG7-CH0 - 50%
-		API_PWM_Setcom(API_PWM_TIM2, API_PWM_CH1, 3000); //B7  TIMG6-CH1 - 75%
-
-		API_PWM_Setcom(API_PWM_TIM3, API_PWM_CH1, 2000); //B13 TIMA0-CH3 - 50%
-		API_PWM_Setcom(API_PWM_TIM3, API_PWM_CH2, 3000); //B9  TIMA0-CH1 - 75%
-
-		API_PWM_Setcom(API_PWM_TIM4, API_PWM_CH1, 2000); //A28 TIMA1-CH0 - 50%
-		API_PWM_Setcom(API_PWM_TIM4, API_PWM_CH2, 3000); //A31 TIMA1-CH1 - 75%
-
-		API_PWM_Setcom(API_PWM_TIM5, API_PWM_CH1, 1000); //A29 TIMG8-CH0 - 50%
-		API_PWM_Setcom(API_PWM_TIM5, API_PWM_CH2, 1500); //A30 TIMG8-CH1 - 75%
-
 		/* ── 蜂鸣器/LED 调度 @5ms ── */
 		if (tasks.buzzer_5ms.flag)
 		{

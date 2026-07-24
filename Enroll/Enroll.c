@@ -120,16 +120,6 @@ static const OLED_SpiCtrlConfig_t s_oledSpiCtrlTable[] =
 };
 #undef ENROLL_OLED_SPI_CTRL_ITEM
 
-/* TB6612 配置表：把 HW_TB6612_MAP 展开成 TB6612_Config_t。 */
-#define ENROLL_TB6612_ITEM(ain1Port, ain1Pin, ain2Port, ain2Pin, bin1Port, bin1Pin, bin2Port, bin2Pin) \
-	{ ain1Port, ain1Pin, ain2Port, ain2Pin, bin1Port, bin1Pin, bin2Port, bin2Pin },
-
-static const TB6612_Config_t s_tb6612Table[] =
-{
-	HW_TB6612_MAP(ENROLL_TB6612_ITEM)
-};
-#undef ENROLL_TB6612_ITEM
-
 /* GrayADC 灰度传感器配置表：把 HW_GRAY_ADC_MAP 展开成 GrayADC_Config_t。 */
 #define ENROLL_GRAY_ADC_ITEM(ad0Port, ad0Pin, ad1Port, ad1Pin, ad2Port, ad2Pin) \
 	{ ad0Port, ad0Pin, ad1Port, ad1Pin, ad2Port, ad2Pin },
@@ -219,11 +209,6 @@ void Enroll_OLED_Register(void)
 	OLED_RegisterSpiCtrl(s_oledSpiCtrlTable, HW_OLED_SPI_CTRL_COUNT);
 }
 
-/* TB6612 注册 */
-void Enroll_TB6612_Register(void)
-{
-	TB6612_Register(s_tb6612Table, HW_TB6612_COUNT);
-}
 
 /* 编码器注册 */
 void Enroll_Encoder_Register(void)

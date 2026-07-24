@@ -32,7 +32,7 @@
 ```text
 A_Entry/                程序入口（main.c）
 app/                    应用层（控制逻辑、任务调度、算法）
-BSP/                    板级设备层（LED/KEY/OLED/MPU6050/TB6612/GrayADC/JY61P 等）
+BSP/                    板级设备层（LED/KEY/OLED/ICM42688/AT4950/JY61P/GrayADC 等）
 Enroll/                 注册层（板级资源映射与注册）
 API/                    接口层（片内外设抽象 + I2C/SPI 协议层）
 Core/MSPM0G3507/        核心层（G3507 底层实现）
@@ -77,13 +77,13 @@ G3507_hw_config.h (映射宏)
 **仅使用一个定时器 TIMG0** 作为系统时基（1ms 中断）。
 
 ISR 中直接执行时序敏感的控制任务：
-- Key_Tick @1ms（按键消抖，内部 10 分频，30ms 消抖窗口）
-- JY61P_Task + GrayADC_Task + 出入线检测 + Direction_Control @5ms
+- g_sys_tick_ms++ + Key_Tick @1ms（按键消抖，内部 10 分频，30ms 消抖窗口）
+- JY61P_Task + **ICM42688_ReadSensor** + GrayADC_Task + 出入线检测 + Direction_Control @5ms
 - Encoder Snapshot + GetSpeed + Task_Run @20ms
 - TaskManager tick 计数（只置标志位，供主循环消费）
 
-**JY61P_Task 在 ISR 5ms 中解析（数据年龄 ≤5ms），消除主循环延迟抖动。**
-**所有 PID 运算使用 Q16.16 整数，ISR 最坏执行时间 < 60µs**。
+**JY61P_Task + ICM42688_ReadSensor 均在 ISR 5ms 中读取（数据年龄 ≤5ms）。**
+**方向 PID 使用 Q16.16 整数。ICM42688 含 float 转换（atan2f/sqrtf），5ms 槽合计最坏 ~185µs（3.7% CPU）。**
 
 主循环仅负责非实时任务：
 - key_Get（按键事件同步，20ms）
@@ -98,17 +98,17 @@ ISR 中直接执行时序敏感的控制任务：
 | 优先级 | 外设 | 说明 |
 |:---:|------|------|
 | 0 | TIMG0 | 系统时基 1ms（ISR 直接执行所有控制任务） |
-| 2 | Encoder EXTI / USART4 | 编码器脉冲边沿捕获 / JY61P 陀螺仪 RX |
-| 3 | USART1/2/3 + MPU6050 + 缺省 | 调试串口与辅助外设 |
+| 2 | Encoder EXTI / USART2 | 编码器脉冲边沿捕获 / JY61P 陀螺仪 RX |
+| 3 | USART1/3/4 + MPU6050 + 缺省 | 调试串口与辅助外设 |
 
 编码器 EXTI 优先级统一在 `SYSTEM/IrqPriority.h` 中管理（`IRQ_PRIO_ENCODER_EXTI 2U`）。
 
 ### 4.6 JY61P 数据流架构（当前：ISR 内解析）
 
-JY61P 数据流（当前使用 USART4，115200 bps）：
+JY61P 数据流（当前使用 USART2，115200 bps）：
 
 ```text
-┌─ USART4 ISR（优先级 2）──────────────────────┐
+┌─ USART2 ISR（优先级 2）──────────────────────┐
 │  Control_Task_USART_Callback → FIFO 排空     │  ← 硬件 FIFO 循环读出
 │  → JY61P_RxPush(byte) → 环形缓冲区           │  ← 只入队，极快
 └──────────────────────────────────────────────┘
@@ -189,25 +189,25 @@ Buzzer_Light(LED1, 500);
 
 ---
 
-### 5.1 PWM 双定时器支持
+### 5.1 PWM 多定时器支持（5 路）
 
-`G3507_pwm.c` 同时支持 TIMA1（高级定时器）和 TIMG8（通用定时器）：
+`G3507_pwm.c` 统一支持 **5 种定时器**（TIMG7/TIMG6/TIMA0/TIMA1/TIMG8），8 个 PWM 通道：
 
-| 方案 | 引脚 | 定时器 | hw_config.h 中 coreTimId |
-|------|------|--------|--------------------------|
-| A（当前 PCBV3.0） | PB15=CCP0→PWMA, PB7=CCP1→PWMB | TIMG8 | `API_PWM_CORE_TIMG8` |
-| B（旧板 PCBV1.0） | PA16=CCP1, PA17=CCP0 | TIMA1 | `API_PWM_CORE_TIMA1` |
+| API | 通道 | 引脚 | 硬件定时器 | CCP | 电源域 | 时钟 | Period | 频率 | 用途 |
+|-----|------|------|-----------|-----|--------|------|--------|------|------|
+| TIM1 | CH1 | PB15 | TIMG7 | CCP0 | PD1 | 80M | 4000 | 20k | AT4950 AIN1 |
+| TIM2 | CH1 | PB7 | TIMG6 | CCP1 | PD1 | 80M | 4000 | 20k | AT4950 AIN2 |
+| TIM3 | CH1 | PB13 | TIMA0 | CCP3 | PD1 | 80M | 4000 | 20k | AT4950 BIN1 |
+| TIM3 | CH2 | PB9 | TIMA0 | CCP1 | PD1 | 80M | 4000 | 20k | AT4950 BIN2 |
+| TIM4 | CH1 | PA28 | TIMA1 | CCP0 | PD1 | 80M | 4000 | 20k | 预留 |
+| TIM4 | CH2 | PA31 | TIMA1 | CCP1 | PD1 | 80M | 4000 | 20k | 预留 |
+| TIM5 | CH1 | PA29 | TIMG8 | CCP0 | PD0 | 40M | 2000 | 20k | 预留 |
+| TIM5 | CH2 | PA30 | TIMG8 | CCP1 | PD0 | 40M | 2000 | 20k | 预留 |
 
-`HW_PWM_MAP` 中改 `coreTimId` 即可切换，`ConfigPin`/`InitTimer`/`SetCCR` 自动适配 DL_TimerG_* 或 DL_TimerA_* API。
-
-PWM 参数（当前）：
-
-- **频率 20kHz**，占空比 **0-2000**（每步 0.05%）：`API_PWM_Init(API_PWM_TIM1, 2000-1, 1-1)`
-- TIMG8 在 **PD0 电源域**，时钟为 ULPCLK 40MHz（不是 80MHz MCLK）：40M ÷ 1 ÷ 2000 = 20kHz
-- 输出极性：装载事件拉低 / 下行比较拉高，**duty=0 时 CC=period 比较永不触发 → 输出纯恒低**
-  （历史教训：旧极性 duty=0 会输出恒高 100%，导致电机"给 0 停、给任意值满转"）
-- `TB6612_MAX_DUTY = 2000` 与 ARR+1 保持一致，改 PWM 分辨率必须同步等比缩放
-  PID 增益、PID 输出限幅与所有写死的占空比常数
+- `API_PWM_CORE_CCP0~3`：4 个比较通道宏，TIMA0 使用 CCP3（PB13）
+- `G3507_PWM_IsTimerG`：自动识别 TIMG 类（TIMG6/7/8）vs TIMA 类（TIMA0/1），分支到对应 API
+- `HW_PWM_MAP` 中改 `coreTimId` + `coreChannel` 即可重新分配引脚，底层全自动适配
+- 输出极性：LACT LOW / CDACT HIGH（边缘对齐减计数）→ `duty=0` 恒低，`duty=period` 恒高（刹车用）
 
 ---
 
@@ -217,11 +217,13 @@ PWM 参数（当前）：
 |------|------|----------|------|
 | LED | BSP/LED/ | GPIO | 已实现 |
 | KEY | BSP/KEY/ | GPIO（消抖） | 已实现 |
-| OLED | BSP/OLED/ | I2C/SPI | 已实现 |
-| MPU6050 | BSP/MPU6050/ | I2C + EXTI（DMP） | 已实现（DMP 已启用） |
-| TB6612 | BSP/TB6612/ | PWM + GPIO | 已实现（PWM 默认 TIMG8） |
+| OLED | BSP/OLED/ | SPI（软） | 已实现 |
+| MPU6050 | BSP/MPU6050/ | I2C + EXTI（DMP） | 已实现（预留） |
+| **ICM42688** | BSP/ICM42688/ | SPI2（软, 5MHz） | **已实现（ISR 驱动）** |
+| **AT4950** | BSP/AT4950/ | 4 路独立 PWM（快衰减） | **已实现** |
 | **GrayADC** | BSP/gray_adc/ | ADC + GPIO（74HC4051） | 已实现 |
-| **JY61P** | BSP/JY61P/ | UART（USART4, 115200 bps） | 已实现 |
+| **JY61P** | BSP/JY61P/ | UART（USART2, 115200 bps） | 已实现 |
+| TB6612 | BSP/TB6612/ | PWM + GPIO | 底层保留，注册层已删除 |
 
 ### 6.1 GrayADC — 8 路灰度传感器
 
@@ -239,6 +241,32 @@ PWM 参数（当前）：
 - 中断上半部/下半部分离架构
 - 写操作：`JY61P_ZAxisZero()` — Z 轴偏航角归零
 - 输出速率和波特率通过上位机配置（传感器内部 MCU 保存）
+
+### 6.3 ICM42688 — TDK 高性能六轴陀螺仪（当前主力 IMU）
+
+- 通信：SPI2（软, 5MHz DelayOff）— SCK=PA25, MOSI=PB25, MISO=PA24, CS=PB23
+- 总线/速率统一由 `SYSTEM/BusRate.h` 配置（`ICM42688_SPI_BUS` / `ICM42688_SPI_SPEED`）
+- 默认配置：±16g / ±2000dps / 双 1kHz ODR / 低噪声模式
+- ISR 驱动模型：
+  - ISR @5ms → `ICM42688_ReadSensor()` — 一次 12 字节 SPI burst + float 转换 + 偏航积分
+  - 主循环 / 控制代码 → `ICM42688_GetAttitude()` / `GetGyroscope()` / `GetAccelerometer()` — 零 SPI
+- 偏航积分基于 `g_sys_tick_ms` 自动计算 dt，首次自动归零
+- `ICM42688_ReadSensor` 含 atan2f/sqrtf（M0+ 软件浮点 ~100μs），总耗时 ~120μs
+- 读数据接口对标 MPU6050 风格：`GetAttitude(&roll, &pitch, &yaw)` / `GetGyroscope()` / `GetAccelerometer()`
+
+### 6.4 AT4950 — 双路 H 桥电机驱动（快衰减 + 单极性 PWM）
+
+- 控制逻辑：
+  - 正转：IN1 = PWM, IN2 = 0
+  - 反转：IN1 = 0, IN2 = PWM
+  - 刹车：IN1 = 1, IN2 = 1（100% 占空比短路制动）
+- 4 路独立 PWM（每个 IN 脚一个 PWM 通道），全 PD1 @20kHz, period=4000
+- 接口：`AT4950_SetSpeed(speedA, speedB)` — 正负表示方向，绝对值 = 占空比
+- 安全特性：
+  - 上电初始刹车（`AT4950_Init`）
+  - 方向反转自动插入 2ms 刹车死区，防止 H 桥直通
+  - 同方向调速直接改占空比，无死区
+- TB6612 底层代码保留，注册层已删除
 
 ---
 
@@ -286,18 +314,19 @@ PID（Q16.16 整数）：
 
 | 周期 | 任务 | 执行位置 |
 |------|------|:---:|
-| 1ms | Key_Tick（内部 10 分频，30ms 消抖窗口） | ISR |
-| 5ms | JY61P_Task + GrayADC_Task + 出入线检测 + Direction_Control | ISR |
-| 20ms | Encoder Snapshot + GetSpeed + Task_Run（Control_Run 保留） | ISR |
+| 1ms | g_sys_tick_ms++, Key_Tick（内部 10 分频，30ms 消抖窗口） | ISR |
+| 5ms | JY61P_Task + **ICM42688_ReadSensor** + GrayADC_Task + 出入线检测 + Direction_Control | ISR |
+| 20ms | Encoder Snapshot + GetSpeed + Task_Run | ISR |
 | 50ms | usart_printf（标志位驱动） | 主循环 |
-| 100ms | OLED 刷新（标志位驱动） | 主循环 |
+| 100ms | OLED 刷新（标志位驱动） + AT4950 测试（500ms 切换） | 主循环 |
 
-**TaskManager** 仅管理主循环低频任务（`print_50ms` / `oled_100ms`），在 ISR 中计数+置标志位，主循环轮询消费。
+**TaskManager** 仅管理主循环低频任务（`buzzer_5ms` / `key_20ms` / `print_50ms` / `oled_100ms`），在 ISR 中计数+置标志位，主循环轮询消费。
 
-ISR 最坏执行时间（Q16.16 PID）：~60µs @80MHz（占 1ms 周期的 6%）。
+ISR 5ms 槽耗时 ~185µs（占 3.7% CPU）：GrayADC(40μs) + JY61P(5μs) + ICM42688(120μs) + Direction_PID(15μs)。
 
 USART 中断回调：
-- USART4：`JY61P_RxPush()` — 仅环形缓冲入队（JY61P 串口号可通过 `JY61P_USART` 宏统一切换）
+- USART2：`JY61P_RxPush()` — 仅环形缓冲入队
+- USART4：预留
 
 ### 7.3 PID 库
 
@@ -352,7 +381,7 @@ cmake --build --preset Debug
 - 业务逻辑不直接碰寄存器。
 - 资源变化优先改 Enroll 映射（`G3507_hw_config.h` → `Enroll.c`）。
 - 总线和中断策略集中改 SYSTEM 头文件。
-- 高频传感器数据不在 ISR 内解析，用环形缓冲 + 主循环下半部。
+- 高频传感器数据优先在 ISR 内读取（JY61P 环形缓冲 / ICM42688 直接 SPI burst），保证数据年龄可控。浮点计算量大的融合/滤波放主循环下半部。
 - 时序敏感的快照操作（编码器 SnapshotAll）在 ISR 中执行，保证精确等间隔。
 - PID 配置 API 接受 float（Init 阶段一次性转换），运行时全部整数。
 - 非阻塞延时用 `NonBlockDelay_t`，禁止在主循环或 ISR 中使用 `Delay_ms`。
@@ -370,5 +399,5 @@ cmake --build --preset Debug
 6. A_Entry/main.c
 7. SYSTEM/BusRate.h
 8. SYSTEM/IrqPriority.h
-9. app/Control/Control.c
-10. app/Control_Task/Control_Task.c
+9. BSP/ICM42688/ICM42688.h
+10. BSP/AT4950/AT4950.h

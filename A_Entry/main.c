@@ -4,6 +4,7 @@
 /*系统sys层*/
 #include "sys.h"
 #include "Delay.h"
+#include "BusRate.h"       /* 软件总线统一配置中心 */
 
 /*API层 MCU片内外设*/
 #include "usart.h"
@@ -27,15 +28,16 @@
 #include "KEY.h"
 #include "OLED.h"
 #include "Control.h"
-#include "TB6612.h"
+// #include "TB6612.h"                   /* 已换用 AT4950 */
 #include "AT4950.h"
+#include "ICM42688.h"
 #include "gray_adc.h"
 #include "MPU6050.h"
 #include "MPU6050_Int.h"
 #include "jy61p.h"
 
 /* ── 调试开关 ── */
-#define DEBUG_PRINT_ENABLE  0U   /* 开启/关闭串口 printf 调试输出 */
+#define DEBUG_PRINT_ENABLE  1U   /* 开启/关闭串口 printf 调试输出 */
 #define DEBUG_OLED_ENABLE   1U   /* 开启/关闭 OLED 显示            */
 
 int main(void)
@@ -52,7 +54,7 @@ int main(void)
 	Enroll_LED_Register();					/* LED 资源注册 */
 	Enroll_KEY_Register();					/* KEY 资源注册 */
 	Enroll_OLED_Register();					/* OLED SPI 控制脚注册 */
-	Enroll_TB6612_Register();				/* TB6612 资源注册 */
+	// Enroll_TB6612_Register();			/* 已换用 AT4950 */
 	Enroll_Encoder_Register();				/* 编码器 资源注册 */
 	Enroll_GrayADC_Register();				/* GrayADC 灰度传感器 资源注册 */
 
@@ -68,7 +70,7 @@ int main(void)
 	API_PWM_Init(API_PWM_TIM1, 4000U - 1U, 1U - 1U); /* TIMG7@PD1 电机A相 */
 	API_PWM_Init(API_PWM_TIM2, 4000U - 1U, 1U - 1U); /* TIMG6@PD1 电机A相 */
 	API_PWM_Init(API_PWM_TIM3, 4000U - 1U, 1U - 1U); /* TIMA0@PD1 电机B相 */
-	API_PWM_Init(API_PWM_TIM4, 4000U - 1U, 1U - 1U); /* TIMA1@PD1 预留PWM */
+	// API_PWM_Init(API_PWM_TIM4, 4000U - 1U, 1U - 1U); /* TIMA1@PD1 预留PWM */
 	// API_PWM_Init(API_PWM_TIM5, 2000U - 1U, 1U - 1U); /* TIMG8@PD0 预留PWM(非必要不启动) */
 	AT4950_Init();							/* 电机驱动上电刹车，防止误触发 */
 	API_ADC_Init(API_ADC1); // 初始化 ADC1
@@ -80,13 +82,14 @@ int main(void)
 	API_SPI_Init();						/* 软件 SPI 初始化 */
 	// App_I2C_ScanOnce();				/* 开机执行一次 I2C 扫描 */
 	// App_SPI_TestOnce();				/* 开机执行一次 SPI 测试 */
+	ICM42688_Init();					/* ICM42688 陀螺仪（SPI2, 5MHz DelayOff） */
 
 /* BSP硬件抽象层初始化*/
 	LED_Init(LED_LOW); // 初始化LED-低电平
 	KEY_Init(); // 初始化按键
 	OLED_Init(OLED_IF_SPI);		 			/* OLED_IF_I2C(4针) / OLED_IF_SPI(7针) */
 	JY61P_Init();							/* JY61P 陀螺仪数据结构初始化 */
-	TB6612_Init(); 							/* TB6612 电机驱动初始化 */
+	// TB6612_Init(); 						/* 已换用 AT4950 */
 	API_Encoder_Init(API_ENCODER_1); 		/* 编码器 1 初始化 */
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
@@ -113,12 +116,36 @@ int main(void)
 			key_Get();
 		}
 
+		if (Key == 1U)
+		{
+			LED_Control(LED1, LED_HIGH);
+			AT4950_SetSpeed(1000, 0);
+		}
+		if (Key == 2U)
+		{
+			LED_Control(LED2, LED_HIGH);
+			AT4950_SetSpeed(0, 1000);
+		}
+		if (Key == 3U)
+		{
+			LED_Control(LED3, LED_HIGH);
+			AT4950_SetSpeed(-1000, -1000);
+		}
+		if (Key == 4U)
+		{
+			LED_Control(LED1, LED_LOW);
+			LED_Control(LED2, LED_LOW);
+			LED_Control(LED3, LED_LOW);
+			AT4950_SetSpeed(0,0);
+		}
+
 		/* 串口打印 50ms */
 #if (DEBUG_PRINT_ENABLE == 1U)
 		if (tasks.print_50ms.flag)
 		{
 			tasks.print_50ms.flag = false;
-			GrayADC_PrintRaw(&g_graySensor, USART2);
+			// GrayADC_PrintRaw(&g_graySensor, USART2);
+			usart_printf(USART1, "key: %lu\r\n", Key);
 		}
 #endif
 
@@ -126,20 +153,20 @@ int main(void)
 #if (DEBUG_OLED_ENABLE == 1U)
 		if (tasks.oled_100ms.flag)
 		{
+			float icmRoll, icmPitch, icmYaw, icmGz;
 			tasks.oled_100ms.flag = false;
-			// OLED_Clear();
-			OLED_Printf(0, 0, OLED_6X8, "T:%d Y%4.1f",Task_GetSelect(),JY61P_GetYawFiltered() * 0.01f);
+
+			ICM42688_GetAttitude(&icmRoll, &icmPitch, &icmYaw);
+			ICM42688_GetGyroscope(0, 0, &icmGz);  /* 只读Z轴角速度 */
+
+			OLED_Printf(0, 0, OLED_6X8, "T:%d JY%+4.1f", Task_GetSelect(), JY61P_GetYawFiltered() * 0.01f);
+			OLED_Printf(0, 16, OLED_6X8, "R:%+5.1f P:%+5.1f", icmRoll, icmPitch);
+			OLED_Printf(0, 32, OLED_6X8, "Y:%+5.1f Gz:%+5.0f", icmYaw, icmGz);
 			OLED_Printf(78, 48, OLED_6X8, "%d%d%d%d%d%d%d%d",
 				g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
 				g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
 				g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
 				g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]);
-			// OLED_Printf(0, 16, OLED_6X8, "L:%d  R:%d", Encoder1_Speed, Encoder2_Speed);
-			// OLED_Printf(64, 16, OLED_6X8, "P:%d T:%d", Task_GetPos(), Task_GetActive());
-			// OLED_Printf(0, 32, OLED_6X8, "H:%d", s_gray_enter_fired);
-			// OLED_Printf(24, 32, OLED_6X8, "B:%d", s_gray_exit_fired);
-			// OLED_Printf(64, 32, OLED_6X8, "OUT:%d", (int)yaw_pid.output);
-			// OLED_Printf(0, 48, OLED_6X8, "yaw:%.1f", jy->yaw);
 			OLED_Update();
 		}
 #endif

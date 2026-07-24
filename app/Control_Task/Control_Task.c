@@ -12,6 +12,7 @@
 #include "gray_adc.h"
 #include "jy61p.h"
 #include "TB6612.h"
+#include "ICM42688.h"
 
 /* ══════════════════════════════════════════════════════════════════════
  * 全局任务管理器实例（仅管理主循环执行的低频任务）
@@ -49,14 +50,15 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     /* ── 1. 按键扫描 @1ms ── */
     Key_Tick();
 
-    /* ── 2. 灰度采集 @5ms + 出入线检测 + 方向 PID ── */
+    /* ── 2. 传感器数据解析刷新 - 5ms ── */
     tick_5ms++;
     if (tick_5ms >= 5U)
     {
         tick_5ms = 0U;
 
         GrayADC_Task(&g_graySensor);
-        JY61P_Task();   /* 偏航角数据包 */
+        JY61P_Task();           /* JY61P 偏航角数据包 */
+		ICM42688_ReadSensor();  /* ICM42688 6轴 burst读 + 偏航积分 */
 
         /* 出入线检测 → 互斥置位：一方触发则清零对方，保证两者不同时为 1 */
         if (GrayDetect_EnterLine()) { s_gray_enter_fired = 1U; s_gray_exit_fired = 0U; }

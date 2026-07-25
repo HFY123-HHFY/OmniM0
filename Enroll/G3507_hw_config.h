@@ -244,6 +244,22 @@
       HW_GRAY_ADC_AD1_PORT, HW_GRAY_ADC_AD1_PIN, \
       HW_GRAY_ADC_AD2_PORT, HW_GRAY_ADC_AD2_PIN)
 
+/* TB6612 板级映射：AIN1=PA12, AIN2=PB13, BIN1=PB11, BIN2=PB9。 */
+// #define HW_TB6612_AIN1_PORT   GPIOA
+// #define HW_TB6612_AIN1_PIN    DL_GPIO_PIN_12
+// #define HW_TB6612_AIN2_PORT   GPIOB
+// #define HW_TB6612_AIN2_PIN    DL_GPIO_PIN_13
+// #define HW_TB6612_BIN1_PORT   GPIOB
+// #define HW_TB6612_BIN1_PIN    DL_GPIO_PIN_11
+// #define HW_TB6612_BIN2_PORT   GPIOB
+// #define HW_TB6612_BIN2_PIN    DL_GPIO_PIN_9
+
+/* #define HW_TB6612_MAP(X) \
+    X(HW_TB6612_AIN1_PORT, HW_TB6612_AIN1_PIN, \
+      HW_TB6612_AIN2_PORT, HW_TB6612_AIN2_PIN, \
+      HW_TB6612_BIN1_PORT, HW_TB6612_BIN1_PIN, \
+      HW_TB6612_BIN2_PORT, HW_TB6612_BIN2_PIN) */
+
 /* 当前板子上注册了 3 个LED + 1 个蜂鸣器 */
 #define HW_LED_COUNT    4U
 /* 当前板子上注册了 4 个按键 */
@@ -266,5 +282,7 @@
 #define HW_ENCODER_COUNT  2U
 /* 当前板子上注册了 1 路 GrayADC 灰度传感器 */
 #define HW_GRAY_ADC_COUNT  1U
+/* 当前板子上注册了 1 路 TB6612 电机驱动 */
+// #define HW_TB6612_COUNT 1U
 
 #endif /* __G3507_HW_CONFIG_H */

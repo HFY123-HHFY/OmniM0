@@ -209,6 +209,11 @@ void Enroll_OLED_Register(void)
 	OLED_RegisterSpiCtrl(s_oledSpiCtrlTable, HW_OLED_SPI_CTRL_COUNT);
 }
 
+/* TB6612 注册 */
+// void Enroll_TB6612_Register(void)
+// {
+// 	TB6612_Register(s_tb6612Table, HW_TB6612_COUNT);
+// }
 
 /* 编码器注册 */
 void Enroll_Encoder_Register(void)

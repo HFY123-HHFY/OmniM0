@@ -121,9 +121,9 @@ void Task_1(void)
     if (s_state == 0U)
     {
         LED_Control(LED1, LED_LOW);
-        PID_EncoderSpeed_Set(&speed_loop, 20.0f, 150.0f, 0.0f, 15.0f);
-        YawPid_InitStraight();                       /* 直走专用：Out_max=300 */
-        YawPid_Set(0.3f, 0.03f, 0.0f, 0.0f);        /* 温和偏航角：kp 0.3 */
+        PID_EncoderSpeed_Set(&speed_loop, 40.0f, 300.0f, 0.0f, 15.0f);
+        YawPid_InitStraight();                       /* 直走专用：Out_max=600 */
+        YawPid_Set(0.6f, 0.06f, 0.0f, 0.0f);        /* 温和偏航角：kp 0.6 */
         PID_Reset(&yaw_pid);
         s_cool  = 5U;                                /* 100ms 冷却：防上电噪点误触发 */
         s_state = 1U;
@@ -198,10 +198,10 @@ void Task_2(void)
     /* ── 首次进入：设置速度环、方向环、偏航角环的 PID 参数 ── */
     if (s_state == T2_INIT)
     {
-        PID_EncoderSpeed_Set(&speed_loop, 20.0f, 150.0f, 0.0f, 15.0f);
-        Set_PID(&yaw_pid,        0.3f, 0.03f, 0.0f);       /* 偏航角环参数      */
-        PID_SetOutputLimit(&yaw_pid, 400);                 /* 直走舵量限 ±400    */
-        Set_PID(&direction_pid,  1.0f, 0.002f, 0.01f);      /* 灰度方向环参数    */
+        PID_EncoderSpeed_Set(&speed_loop, 40.0f, 300.0f, 0.0f, 15.0f);
+        Set_PID(&yaw_pid,        0.6f, 0.06f, 0.0f);       /* 偏航角环参数      */
+        PID_SetOutputLimit(&yaw_pid, 800);                 /* 直走舵量限 ±800    */
+        Set_PID(&direction_pid,  2.0f, 0.004f, 0.02f);      /* 灰度方向环参数    */
         PID_Reset(&yaw_pid);
         PID_Reset(&direction_pid);
         s_task2_pos = 1U;   /* A 点 */
@@ -333,9 +333,9 @@ void Task_2(void)
 
 /* ── 开环旋转参数（固定占空比 + 定时，不依赖陀螺仪）── */
 /* 旋转方向：TASK3_DRIVE_YAW_A/B 为负 = 逆时针 = 左转（左轮后、右轮前）    */
-#define TASK3_SPIN_DUTY_A   300     /* A 点旋转占空比（左转为正）              */
+#define TASK3_SPIN_DUTY_A   600     /* A 点旋转占空比（左转为正）              */
 #define TASK3_SPIN_TICKS_A  45U     /* A 点旋转 tick 数（×20ms）               */
-#define TASK3_SPIN_DUTY_B   -300     /* B 点旋转占空比                          */
+#define TASK3_SPIN_DUTY_B   -600    /* B 点旋转占空比                          */
 #define TASK3_SPIN_TICKS_B  45U    /* B 点旋转 tick 数（×20ms）               */
 
 /* ── A→C / B→D 直走偏航角 PID 目标角度（度）── */
@@ -410,8 +410,8 @@ static void Task34_Run(uint8_t max_laps)
     /* ── 首次进入：设置速度环 + 方向环 PID 参数（偏航角环在各阶段独立配置）── */
     if (s_state == T3_INIT)
     {
-        PID_EncoderSpeed_Set(&speed_loop, 20.0f, 150.0f, 0.0f, 18.0f);
-        Set_PID(&direction_pid,  1.0f, 0.002f, 0.01f);      /* 灰度方向环参数    */
+        PID_EncoderSpeed_Set(&speed_loop, 40.0f, 300.0f, 0.0f, 18.0f);
+        Set_PID(&direction_pid,  2.0f, 0.004f, 0.02f);      /* 灰度方向环参数    */
         PID_Reset(&direction_pid);
         s_task3_pos = 1U;   /* A 点 */
         s_state = T3_A_C_SPIN;
@@ -446,8 +446,8 @@ static void Task34_Run(uint8_t max_laps)
         {
             s_task3_pos = 1U;                       /* A→C 途中 */
             s_cool      = 10U;                       /* 200ms 冷却：防旋转后边界噪点 */
-            YawPid_Set(0.3f, 0.03f, 0.0f, TASK3_DRIVE_YAW_A);  /* 直走温和偏航角 + 保持目标 */
-            PID_SetOutputLimit(&yaw_pid, 400);       /* 直走舵量限 ±400             */
+            YawPid_Set(0.6f, 0.06f, 0.0f, TASK3_DRIVE_YAW_A);  /* 直走温和偏航角 + 保持目标 */
+            PID_SetOutputLimit(&yaw_pid, 800);       /* 直走舵量限 ±800             */
             PID_Reset(&yaw_pid);
             PID_Reset(&speed_loop.left);             /* ★ 清速度环积分：旋转后重新起步 */
             PID_Reset(&speed_loop.right);
@@ -515,8 +515,8 @@ static void Task34_Run(uint8_t max_laps)
         {
             s_task3_pos = 3U;                       /* B→D 途中 */
             s_cool      = 10U;                       /* 200ms 冷却 */
-            YawPid_Set(0.3f, 0.03f, 0.0f, TASK3_DRIVE_YAW_B); /* 直走温和偏航角 + 保持目标 */
-            PID_SetOutputLimit(&yaw_pid, 400);
+            YawPid_Set(0.6f, 0.06f, 0.0f, TASK3_DRIVE_YAW_B); /* 直走温和偏航角 + 保持目标 */
+            PID_SetOutputLimit(&yaw_pid, 800);
             PID_Reset(&yaw_pid);
             PID_Reset(&speed_loop.left);             /* ★ 清速度环积分 */
             PID_Reset(&speed_loop.right);

@@ -29,11 +29,11 @@ extern PID_TypeDef yaw_pid;             /* 偏航角位置环 PID */
 
 /* PID 初始化（速度环 + 方向环 + 偏航角环） */
 void PID_Control_Init(void);
-void YawPid_Init(void);                 /* 偏航角 PID 默认初始化（Out_max=1500）  */
-void YawPid_InitStraight(void);         /* 直走专用：小死区 + 低输出上限 ±300    */
+void YawPid_Init(void);                 /* 偏航角 PID 默认初始化（Out_max=3000）  */
+void YawPid_InitStraight(void);         /* 直走专用：小死区 + 低输出上限 ±600    */
 void YawPid_Set(float kp, float ki, float kd, float target_deg);  /* 四合一：PID 参数 + 目标角度 */
 void YawPid_SetTarget(float degrees);   /* 单独设置目标偏航角（度）             */
-int32_t YawPid_Calc(int32_t yaw_cdeg);     /* 计算偏航角 PID 输出（cdeg=°×100，ISR 整数安全）*/
+int32_t YawPid_Calc(float yaw_degrees); /* 计算偏航角 PID 输出（度，直接传 jy->yaw）*/
 void YawTest_Control(void);             /* 偏航角单独测试（纯差速，绕过速度环）  */
 
 /*
@@ -46,7 +46,7 @@ void YawTest_Control(void);             /* 偏航角单独测试（纯差速，�
 void Direction_Control(void);
 
 /*
- * 电机输出限幅到 TB6612_MAX_DUTY (±2000)。
+ * 电机输出限幅到 TB6612_MAX_DUTY (±400)。
  */
 void MotorOutput_Clamp(int16_t *left, int16_t *right);
 

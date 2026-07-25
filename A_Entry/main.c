@@ -20,7 +20,7 @@
 #include "PID/PID.h"
 #include "Control/Control.h"
 #include "Control_Task/Control_Task.h"
-#include "Tasks/Tasks.h"     /* Task_GetSelect / Task_GetActive */
+#include "Tasks/Tasks.h"
 
 /*BSP硬件抽象层*/
 #include "LED.h"
@@ -28,7 +28,7 @@
 #include "KEY.h"
 #include "OLED.h"
 #include "Control.h"
-// #include "TB6612.h"                   /* 已换用 AT4950 */
+#include "TB6612.h"
 #include "AT4950.h"
 #include "ICM42688.h"
 #include "gray_adc.h"
@@ -54,7 +54,7 @@ int main(void)
 	Enroll_LED_Register();					/* LED 资源注册 */
 	Enroll_KEY_Register();					/* KEY 资源注册 */
 	Enroll_OLED_Register();					/* OLED SPI 控制脚注册 */
-	// Enroll_TB6612_Register();			/* 已换用 AT4950 */
+	// Enroll_TB6612_Register();				/* TB6612 资源注册 */
 	Enroll_Encoder_Register();				/* 编码器 资源注册 */
 	Enroll_GrayADC_Register();				/* GrayADC 灰度传感器 资源注册 */
 
@@ -72,30 +72,34 @@ int main(void)
 	API_PWM_Init(API_PWM_TIM3, 4000U - 1U, 1U - 1U); /* TIMA0@PD1 电机B相 */
 	// API_PWM_Init(API_PWM_TIM4, 4000U - 1U, 1U - 1U); /* TIMA1@PD1 预留PWM */
 	// API_PWM_Init(API_PWM_TIM5, 2000U - 1U, 1U - 1U); /* TIMG8@PD0 预留PWM(非必要不启动) */
-	AT4950_Init();							/* 电机驱动上电刹车，防止误触发 */
-	API_ADC_Init(API_ADC1); // 初始化 ADC1
+	API_ADC_Init(API_ADC1); 				// 初始化 ADC1
 	GrayADC_Init();							/* GrayADC 硬件 + digital_bits 全白（必须在 TIM 前） */
-	API_TIM_Init(API_TIM1, 1U); /* TIMG0 系统时基：每 1ms 触发一次中断 */
 
 /* 通信协议初始化 */
 	API_I2C_Init();						/* 软件 I2C 初始化 */
 	API_SPI_Init();						/* 软件 SPI 初始化 */
 	// App_I2C_ScanOnce();				/* 开机执行一次 I2C 扫描 */
 	// App_SPI_TestOnce();				/* 开机执行一次 SPI 测试 */
-	uint8_t ICM42688 = ICM42688_Init(); /* 初始化ICM42688 陀螺仪（SPI2, 5MHz） */
-	usart_printf(USART1, "ICM42688= %d\r\n", ICM42688);
 
 /* BSP硬件抽象层初始化*/
 	LED_Init(LED_LOW); // 初始化LED-低电平
 	KEY_Init(); // 初始化按键
 	OLED_Init(OLED_IF_SPI);		 			/* OLED_IF_I2C(4针) / OLED_IF_SPI(7针) */
+	{
+		uint8_t icmOk = ICM42688_Init();	/* ICM42688 陀螺仪（SPI2, 5MHz） */
+		usart_printf(USART1, "ICM42688=%d\r\n", icmOk);
+	}
 	JY61P_Init();							/* JY61P 陀螺仪数据结构初始化 */
-	// TB6612_Init(); 						/* 已换用 AT4950 */
+	// TB6612_Init(); 						/* TB6612 电机驱动初始化（已换用 AT4950） */
+	AT4950_Init();							/* 电机驱动上电刹车，防止误触发 */
 	API_Encoder_Init(API_ENCODER_1); 		/* 编码器 1 初始化 */
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
-	// JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒 */
-	// Buzzer_Beep(200);  /* 蜂鸣器短鸣 200ms，非阻塞 */
+
+	JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒（CPU 循环延时，不依赖 tick） */
+
+	API_TIM_Init(API_TIM1, 1U); /* TIMG0 1ms ISR 启动 —— 所有硬件已就绪 */
+	Buzzer_Beep(200);           /* 蜂鸣器短鸣 200ms，非阻塞（依赖 g_sys_tick_ms） */
 
 	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 150.0f, 0.0f, 15.0f);
 	// Set_PID(&direction_pid,  1.0f, 0.002f, 0.01f);      /* 灰度方向环参数    */
@@ -103,10 +107,9 @@ int main(void)
 
 	while (1)
 	{
-		LED_Control(LED1, LED_HIGH);
 		/* ── 蜂鸣器/LED 调度 @5ms ── */
 		if (tasks.buzzer_5ms.flag)
-		{
+		{               
 			tasks.buzzer_5ms.flag = false;
 			Buzzer_Task();
 		}
@@ -117,11 +120,10 @@ int main(void)
 			tasks.key_20ms.flag = false;
 			key_Get();
 		}
-
 		if (Key == 1U)
 		{
 			LED_Control(LED1, LED_HIGH);
-			AT4950_SetSpeed(1000, 0);
+			AT4950_SetSpeed(1000, 1000);
 		}
 		if (Key == 2U)
 		{
@@ -146,7 +148,7 @@ int main(void)
 		{
 			tasks.print_50ms.flag = false;
 			// GrayADC_PrintRaw(&g_graySensor, USART2);
-			usart_printf(USART1, "key: %lu\r\n", Key);
+			// usart_printf(USART1, "key: %lu\r\n", Key);
 		}
 #endif
 
@@ -159,7 +161,6 @@ int main(void)
 
 			ICM42688_GetAttitude(&icmRoll, &icmPitch, &icmYaw);
 			ICM42688_GetGyroscope(0, 0, &icmGz);  /* 只读Z轴角速度 */
-
 			OLED_Printf(0, 0, OLED_6X8, "T:%d JY%+4.1f", Task_GetSelect(), JY61P_GetYawFiltered() * 0.01f);
 			OLED_Printf(0, 16, OLED_6X8, "R:%+5.1f P:%+5.1f", icmRoll, icmPitch);
 			OLED_Printf(0, 32, OLED_6X8, "Y:%+5.1f Gz:%+5.0f", icmYaw, icmGz);

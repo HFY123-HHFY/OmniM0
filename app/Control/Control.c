@@ -36,7 +36,7 @@ void PID_Control_Init(void)
 
     /* ── 方向环结构 ── */
     PID_Init(&direction_pid);
-    PID_Init_WithLimit(&direction_pid, 100, 1500);
+    PID_Init_WithLimit(&direction_pid, 100, 3000);
     PID_SetSampleTime(&direction_pid, 5);
     PID_SetDeadband(&direction_pid, 60);
     PID_SetIntegralSeparation(&direction_pid, 3000);
@@ -51,7 +51,7 @@ void PID_Control_Init(void)
 void YawPid_Init(void)
 {
     PID_Init(&yaw_pid);
-    PID_Init_WithLimit(&yaw_pid, 100, 1500);    /* I_out ±100, Out_max ±1500   */
+    PID_Init_WithLimit(&yaw_pid, 100, 3000);    /* I_out ±100, Out_max ±3000   */
     PID_SetSampleTime(&yaw_pid, 20);             /* dt = 20ms，和速度环同频     */
     PID_SetDeadband(&yaw_pid, 100);              /* ±1.0° 死区（100 cdeg）      */
 }
@@ -60,14 +60,14 @@ void YawPid_Init(void)
  * YawPid_InitStraight — 直走专用偏航角 PID。
  *
  * 与默认版的区别：
- *   - 输出上限从 1500 降到 300（不给速度环造成剧烈差速扰动）
+ *   - 输出上限从 3000 降到 600（不给速度环造成剧烈差速扰动）
  *   - 死区从 1.5° 放宽到 2.0°，避免微小角度波动反复纠偏
  *   - 积分限从 ±100 降到 ±50（防积分超调引发震荡）
  */
 void YawPid_InitStraight(void)
 {
     PID_Init(&yaw_pid);
-    PID_Init_WithLimit(&yaw_pid, 50, 300);       /* I_out ±50, Out_max ±300    */
+    PID_Init_WithLimit(&yaw_pid, 50, 600);       /* I_out ±50, Out_max ±600    */
     PID_SetSampleTime(&yaw_pid, 20);              /* dt = 20ms                  */
     PID_SetDeadband(&yaw_pid, 200);               /* ±2.0° 死区（200 cdeg）     */
 }
@@ -105,17 +105,17 @@ void YawPid_Set(float kp, float ki, float kd, float target_deg)
 }
 
 /*
- * YawPid_Calc — 偏航角 PID 计算（20ms ISR，纯整数，无浮点）。
+ * YawPid_Calc — 偏航角 PID 计算（20ms ISR）。
  *
- * @param yaw_cdeg  当前偏航角（cdeg = °×100）
- * @return           steer 值（±1500），正值=右转
+ * @param yaw_degrees  当前偏航角（度），直接传 jy->yaw
+ * @return             steer 值（±3000），正值=右转
  *
- * 内部自动：±180° wrap → 纯整数 PID_Calc。
- * Target 以 cdeg 存储（YawPid_SetTarget 在 Init 阶段已完成 float→cdeg 转换）。
+ * 内部自动：yaw → cdeg → ±180° wrap → 纯整数 PID_Calc。
  */
-int32_t YawPid_Calc(int32_t yaw_cdeg)
+int32_t YawPid_Calc(float yaw_degrees)
 {
-    int32_t target_cdeg = yaw_pid.Target;       /* Target 存的就是 cdeg */
+    int32_t yaw_cdeg    = (int32_t)(yaw_degrees * 100.0f);
+    int32_t target_cdeg = yaw_pid.Target;       /* Target 存的就是 cdeg，非 Q16.16 */
     int32_t error       = YawError_Wrap(target_cdeg, yaw_cdeg);
     int32_t eff_target  = yaw_cdeg + error;
     yaw_pid.Target      = eff_target;           /* 回存 cdeg（过 ±180° 会自然回绕） */
@@ -145,7 +145,7 @@ void Direction_Control(void)
 }
 
 /* =========================================================================
- * MotorOutput_Clamp — 电机输出限幅到 TB6612_MAX_DUTY (±2000)
+ * MotorOutput_Clamp — 电机输出限幅到 TB6612_MAX_DUTY (±4000)
  * ========================================================================= */
 void MotorOutput_Clamp(int16_t *left, int16_t *right)
 {
@@ -190,8 +190,9 @@ void LineFollow_Output(void)
  * ========================================================================= */
 void Drive_YawSpeed(void)
 {
-    int32_t yaw_cdeg  = JY61P_GetYawFiltered();  /* 纯整数 cdeg，ISR 安全 */
-    int32_t yaw_steer = YawPid_Calc(yaw_cdeg);
+    float   yaw       = JY61P_GetYawFiltered();
+    // float   yaw       = JY61P_GetData()->yaw;   /* 临时：原始数据，不过滤波 */
+    int32_t yaw_steer = YawPid_Calc(yaw);
     int32_t out_left  = 0;
     int32_t out_right = 0;
     int16_t left, right;
@@ -244,8 +245,8 @@ void Direction_Test_Control(void)
  */
 void YawTest_Control(void)
 {
-    int32_t yaw_cdeg = JY61P_GetYawFiltered();   /* 纯整数 cdeg */
-    int32_t steer = YawPid_Calc(yaw_cdeg);
+    float yaw = JY61P_GetYawFiltered();       /* 轻滤波偏航角，防尖峰 */
+    int32_t steer = YawPid_Calc(yaw);
     int16_t left  = (int16_t)steer;
     int16_t right = -(int16_t)steer;
     MotorOutput_Clamp(&left, &right);

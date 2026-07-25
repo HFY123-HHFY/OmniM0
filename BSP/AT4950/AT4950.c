@@ -65,7 +65,7 @@ static void AT4950_BrakeB(void)
 	API_PWM_Setcom(AT4950_BIN2_PWM_TIM, AT4950_BIN2_PWM_CH, AT4950_FULL_DUTY);
 }
 
-/* ── 单路驱动 ── */
+/* ── 单路驱动（直通，不做补偿——死区由 PID 积分项自然克服）── */
 static void AT4950_DriveA(int8_t sign, uint16_t duty)
 {
 	if (sign > 0)

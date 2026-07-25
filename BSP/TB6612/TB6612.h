@@ -3,18 +3,22 @@
 
 #include <stdint.h>
 
-/* TB6612 默认使用的 PWM 定时器与通道映射。
- * PCBV3.0：PWMA ← PB15(TIMG8_CCP0=CH1)，PWMB ← PB7(TIMG8_CCP1=CH2)。
+/* TB6612 默认使用的 PWM 定时器与通道映射（A/B 相各自独立定时器）。
+ * PCBV3.0：
+ *   PWMA ← PB15 (TIMG7_CCP0, PD1 80MHz) → API_PWM_TIM1, CH1
+ *   PWMB ← PB7  (TIMG6_CCP1, PD1 80MHz) → API_PWM_TIM2, CH1
  */
-#define TB6612_PWM_TIM        (API_PWM_TIM1)
+#define TB6612_PWM_TIM_A      (API_PWM_TIM1)
 #define TB6612_PWM_CH_A       (API_PWM_CH1)
-#define TB6612_PWM_CH_B       (API_PWM_CH2)
+#define TB6612_PWM_TIM_B      (API_PWM_TIM2)
+#define TB6612_PWM_CH_B       (API_PWM_CH1)
 
-/* 
-* TB6612 占空比上限（= PWM ARR+1，即满占空比对应 2000）
-* 映射到编码器上：占空比1000、编码器：30; 占空比2000、编码器：60
+/*
+* TB6612 占空比上限（= PWM ARR+1，即满占空比对应 4000）
+* 80MHz / 1 / 4000 = 20kHz，每步 0.025%
+* 映射到编码器上：占空比2000、编码器：30; 占空比4000、编码器：60
 */
-#define TB6612_MAX_DUTY       (2000U) /* 20kHz @ 2000 步，每步 0.05% */
+#define TB6612_MAX_DUTY       (4000U) /* 20kHz @ 4000 步，每步 0.025% */
 
 #define TB6612_WRITE(port, pin, level) API_GPIO_Write((port), (pin), (uint8_t)((level) ? 1U : 0U))
 

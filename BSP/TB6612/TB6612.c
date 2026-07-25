@@ -119,8 +119,8 @@ void TB6612_SetSpeed(int16_t speedA, int16_t speedB)
 		AIN2_OUT(0);
 	}
 
-	// 设置占空比
-	API_PWM_Setcom(TB6612_PWM_TIM, TB6612_PWM_CH_A, dutyA);
+	// 设置占空比（A 相独立定时器）
+	API_PWM_Setcom(TB6612_PWM_TIM_A, TB6612_PWM_CH_A, dutyA);
 
 	// --------------------- B电机 ---------------------
 	if (speedB > 0)
@@ -142,24 +142,6 @@ void TB6612_SetSpeed(int16_t speedA, int16_t speedB)
 		BIN2_OUT(0);
 	}
 
-	// 设置占空比
-	API_PWM_Setcom(TB6612_PWM_TIM, TB6612_PWM_CH_B, dutyB);
+	// 设置占空比（B 相独立定时器）
+	API_PWM_Setcom(TB6612_PWM_TIM_B, TB6612_PWM_CH_B, dutyB);
 }
-
-/*
-	PWM 测试：全 20kHz
-	PD1(80MHz): period=4000 → 50%=2000, 75%=3000           
-	PD0(40MHz): period=2000 → 50%=1000, 75%=1500        
-	
-	API_PWM_Setcom(API_PWM_TIM1, API_PWM_CH1, 2000); //B15 TIMG7-CH0 - 50%
-	API_PWM_Setcom(API_PWM_TIM2, API_PWM_CH1, 3000); //B7  TIMG6-CH1 - 75%
-
-	API_PWM_Setcom(API_PWM_TIM3, API_PWM_CH1, 2000); //B13 TIMA0-CH3 - 50%
-	API_PWM_Setcom(API_PWM_TIM3, API_PWM_CH2, 3000); //B9  TIMA0-CH1 - 75%
-
-	API_PWM_Setcom(API_PWM_TIM4, API_PWM_CH1, 2000); //A28 TIMA1-CH0 - 50%
-	API_PWM_Setcom(API_PWM_TIM4, API_PWM_CH2, 3000); //A31 TIMA1-CH1 - 75%
-
-	API_PWM_Setcom(API_PWM_TIM5, API_PWM_CH1, 1000); //A29 TIMG8-CH0 - 50%
-	API_PWM_Setcom(API_PWM_TIM5, API_PWM_CH2, 1500); //A30 TIMG8-CH1 - 75%
-*/

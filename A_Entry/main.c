@@ -38,7 +38,7 @@
 
 /* ── 调试开关 ── */
 #define DEBUG_PRINT_ENABLE  1U   /* 开启/关闭串口 printf 调试输出 */
-#define DEBUG_OLED_ENABLE   1U   /* 开启/关闭 OLED 显示            */
+#define DEBUG_OLED_ENABLE   0U   /* 开启/关闭 OLED 显示            */
 
 int main(void)
 {
@@ -105,8 +105,14 @@ int main(void)
 	// Set_PID(&direction_pid,  1.0f, 0.002f, 0.01f);      /* 灰度方向环参数    */
 	// YawPid_Set(0.2f, 0.00f, 0.0f, -45.0f);  /* 旋转专用 PID + A 点目标 */
 
+	float icmRoll = 0.0f, icmPitch = 0.0f, icmYaw = 0.0f;
+	// float icmGz = 0.0f;
+
 	while (1)
 	{
+		ICM42688_GetAttitude(&icmRoll, &icmPitch, &icmYaw); /* 读姿态角 */
+		// ICM42688_GetGyroscope(0, 0, &icmGz);  /* 只读Z轴角速度 */
+
 		/* ── 蜂鸣器/LED 调度 @5ms ── */
 		if (tasks.buzzer_5ms.flag)
 		{               
@@ -120,33 +126,35 @@ int main(void)
 			tasks.key_20ms.flag = false;
 			key_Get();
 		}
-		if (Key == 1U)
-		{
-			LED_Control(LED1, LED_HIGH);
-			AT4950_SetSpeed(1000, 1000);
-		}
-		if (Key == 2U)
-		{
-			LED_Control(LED2, LED_HIGH);
-			AT4950_SetSpeed(0, 1000);
-		}
-		if (Key == 3U)
-		{
-			LED_Control(LED3, LED_HIGH);
-			AT4950_SetSpeed(-1000, -1000);
-		}
-		if (Key == 4U)
-		{
-			LED_Control(LED1, LED_LOW);
-			LED_Control(LED2, LED_LOW);
-			LED_Control(LED3, LED_LOW);
-			AT4950_SetSpeed(0,0);
-		}
+
+		// if (Key == 1U)
+		// {
+		// 	LED_Control(LED1, LED_HIGH);
+		// 	AT4950_SetSpeed(1000, 1000);
+		// }
+		// if (Key == 2U)
+		// {
+		// 	LED_Control(LED2, LED_HIGH);
+		// 	AT4950_SetSpeed(0, 1000);
+		// }
+		// if (Key == 3U)
+		// {
+		// 	LED_Control(LED3, LED_HIGH);
+		// 	AT4950_SetSpeed(-1000, -1000);
+		// }
+		// if (Key == 4U)
+		// {
+		// 	LED_Control(LED1, LED_LOW);
+		// 	LED_Control(LED2, LED_LOW);
+		// 	LED_Control(LED3, LED_LOW);
+		// 	AT4950_SetSpeed(0,0);
+		// }
 		/* 串口打印 50ms */
 #if (DEBUG_PRINT_ENABLE == 1U)
 		if (tasks.print_50ms.flag)
 		{
 			tasks.print_50ms.flag = false;
+			usart_printf(USART1, "R:%.2f P:%.2f Y:%.2f\r\n", icmRoll, icmPitch, icmYaw);
 			// GrayADC_PrintRaw(&g_graySensor, USART2);
 			// usart_printf(USART1, "key: %lu\r\n", Key);
 		}
@@ -156,11 +164,8 @@ int main(void)
 #if (DEBUG_OLED_ENABLE == 1U)
 		if (tasks.oled_100ms.flag)
 		{
-			float icmRoll, icmPitch, icmYaw, icmGz;
 			tasks.oled_100ms.flag = false;
-
-			ICM42688_GetAttitude(&icmRoll, &icmPitch, &icmYaw);
-			ICM42688_GetGyroscope(0, 0, &icmGz);  /* 只读Z轴角速度 */
+			
 			OLED_Printf(0, 0, OLED_6X8, "T:%d JY%+4.1f", Task_GetSelect(), JY61P_GetYawFiltered() * 0.01f);
 			OLED_Printf(0, 16, OLED_6X8, "R:%+5.1f P:%+5.1f", icmRoll, icmPitch);
 			OLED_Printf(0, 32, OLED_6X8, "Y:%+5.1f Gz:%+5.0f", icmYaw, icmGz);

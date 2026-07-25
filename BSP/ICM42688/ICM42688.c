@@ -25,9 +25,10 @@ static float    s_yaw;                 /* 偏航积分 (°)           */
 static uint32_t s_lastTick;            /* 上次 ReadSensor 的 tick */
 static uint8_t  s_firstRead;           /* 首次读取标志            */
 
-/* ── 量程系数 ── */
+/* ── 量程系数 + 零偏 ── */
 static float s_accelScale = 1.0f;      /* LSB → m/s² */
 static float s_gyroScale  = 1.0f;      /* LSB → °/s  */
+static float s_gyroBiasZ  = 0.0f;      /* Z 轴零偏 (°/s)，Init 时校准 */
 static uint8_t s_inited = 0U;
 
 /* ── 系统 tick 外部引用（Control_Task.c）── */
@@ -124,7 +125,28 @@ uint8_t ICM42688_Init(void)
 
 	/* ── 上电：GYRO + ACCEL 低噪声模式 ── */
 	ICM42688_WriteReg(ICM42688_PWR_MGMT0, 0x0FU);
-	Delay_ms(10U);
+	Delay_ms(50U);   /* 低噪声模式启动需 ~30ms，取 50ms 充裕 */
+
+	/*
+	 * ── 陀螺仪 Z 轴零偏校准 ──
+	 * 静止状态下采 50 次，每次间隔 1ms（匹配 1kHz ODR），取平均。
+	 * 50 × 1ms = 50ms，覆盖 50 个独立 gyro 样本。
+	 */
+	{
+		uint8_t  calBuf[12];
+		int16_t  rawGz;
+		float    biasSum = 0.0f;
+		uint16_t i;
+
+		for (i = 0U; i < 50U; ++i)
+		{
+			ICM42688_BurstReadFast(ICM42688_ACCEL_DATA_X1, calBuf, 12U);
+			rawGz = (int16_t)(((uint16_t)calBuf[10] << 8) | calBuf[11]);
+			biasSum += (float)rawGz * s_gyroScale;
+			Delay_ms(1U);   /* 等下一个 ODR 周期，确保每次都是独立样本 */
+		}
+		s_gyroBiasZ = biasSum / 50.0f;
+	}
 
 	/* ── 偏航积分状态初始化 ── */
 	s_yaw       = 0.0f;
@@ -174,9 +196,14 @@ void ICM42688_ReadSensor(void)
 	gy = (float)rawGy * s_gyroScale;
 	gz = (float)rawGz * s_gyroScale;
 
-	/* ── 更新全局缓存 ── */
+	/* ── 更新全局缓存（gyro_z 已减零偏）── */
 	s_ax = ax;  s_ay = ay;  s_az = az;
-	s_gx = gx;  s_gy = gy;  s_gz = gz;
+	s_gx = gx;  s_gy = gy;
+	s_gz = gz - s_gyroBiasZ;     /* 零偏校正后的角速度 */
+	if (s_gz > -ICM42688_GYRO_DEADBAND && s_gz < ICM42688_GYRO_DEADBAND)
+	{
+		s_gz = 0.0f;             /* 死区抑制：残余零偏不积分 */
+	}
 
 	/* roll / pitch：atan2 反算 */
 	s_roll  = atan2f(ay, az) * 57.29578f;
@@ -186,7 +213,7 @@ void ICM42688_ReadSensor(void)
 	}
 
 	/*
-	 * ── 阶段 3：偏航积分 ──
+	 * ── 阶段 3：偏航积分（零偏已校正）──
 	 */
 	now = g_sys_tick_ms;
 	if (s_firstRead)
@@ -197,14 +224,17 @@ void ICM42688_ReadSensor(void)
 	}
 	else
 	{
-		/* 无符号减法天然处理 tick 溢出回绕 */
 		dt = (float)(now - s_lastTick) * 0.001f;
-		if (dt > 0.0f && dt < 0.1f)     /* 过滤异常 dt（>100ms 视为不连续） */
+		if (dt > 0.0f && dt < 0.1f)
 		{
-			s_yaw += gz * dt;
+			s_yaw += s_gz * dt;     /* 使用校正后的 gz */
 		}
 		s_lastTick = now;
 	}
+
+	/* ── Yaw 限幅到 ±180° ── */
+	while (s_yaw >  180.0f) { s_yaw -= 360.0f; }
+	while (s_yaw < -180.0f) { s_yaw += 360.0f; }
 }
 
 /* ══════════════════════════════════════════════════════════

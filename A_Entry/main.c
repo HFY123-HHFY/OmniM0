@@ -85,10 +85,8 @@ int main(void)
 	LED_Init(LED_LOW); // 初始化LED-低电平
 	KEY_Init(); // 初始化按键
 	OLED_Init(OLED_IF_SPI);		 			/* OLED_IF_I2C(4针) / OLED_IF_SPI(7针) */
-	{
-		uint8_t icmOk = ICM42688_Init();	/* ICM42688 陀螺仪（SPI2, 5MHz） */
-		usart_printf(USART1, "ICM42688=%d\r\n", icmOk);
-	}
+	uint8_t icmOk = ICM42688_Init();	/* ICM42688 陀螺仪（SPI2, 5MHz） */
+	usart_printf(USART1, "ICM42688=%d\r\n", icmOk);
 	JY61P_Init();							/* JY61P 陀螺仪数据结构初始化 */
 	// TB6612_Init(); 						/* TB6612 电机驱动初始化（已换用 AT4950） */
 	AT4950_Init();							/* 电机驱动上电刹车，防止误触发 */

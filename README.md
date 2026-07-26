@@ -80,8 +80,15 @@ OmniM0/
 │  └─ Drivers_M0G3507/         # TI DriverLib + CMSIS + 启动文件
 ├─ OpenOCD/
 │  └─ G3507_OpenOCD.cfg        # 下载配置
+├─ tools/
+│  └─ setup_env.py             # ★ 环境一键安装脚本
 ├─ docs/
 │  └─ arch-guide.md            # 架构深度解析
+├─ .vscode/
+│  ├─ extensions.json          # VS Code 推荐插件
+│  ├─ tasks.json               # VS Code 任务（F7编译 / F8烧录）
+│  └─ settings.json
+├─ setup_env.bat               # ★ Windows 双击启动器
 ├─ CMakeLists.txt
 ├─ CMakePresets.json
 └─ gcc-arm-none-eabi.cmake
@@ -142,6 +149,82 @@ cmake --build --preset Debug
 ### 🛰️ OpenOCD
 
 - 使用配置：`OpenOCD/G3507_OpenOCD.cfg`
+
+## 🐍 一键环境安装（Python）
+
+如果你是新电脑 / 新队友，拿到工程后**不需要手动装工具链**，直接运行：
+
+```bash
+# 方式一：双击 setup_env.bat（Windows）
+setup_env.bat
+
+# 方式二：命令行（所有平台）
+python tools/setup_env.py
+```
+
+脚本会自动完成：
+
+| 步骤 | 说明 |
+|------|------|
+| 🔍 环境检测 | 扫描 `arm-none-eabi-gcc`、`cmake`、`ninja`、`openocd` 是否安装，输出版本号 |
+| ⚠️ 缺失提示 | 列出缺少哪些工具，给出具体版本要求 |
+| 📦 一键安装 | 通过 `winget` 自动安装缺失的工具链（需确认） |
+| 🔌 插件推荐 | 写入 `.vscode/extensions.json`，VS Code 打开时自动提示安装推荐插件 |
+| ✅ 最终验证 | 安装完成后重新扫描，输出全部工具名称和版本号 |
+
+**仅检测（不安装）：**
+
+```bash
+python tools/setup_env.py --check
+```
+
+**全自动安装（跳过确认）：**
+
+```bash
+python tools/setup_env.py --install
+```
+
+### 🖥️ 运行示例输出
+
+```
+  ╔══════════════════════════════════════════╗
+  ║     Omni架构 开发环境安装脚本             ║
+  ║     GCC ARM + CMake + Ninja + OpenOCD    ║
+  ╚══════════════════════════════════════════╝
+
+  [1/4] 检测当前环境...
+  📋 环境检测报告
+  ─────────────────────────────────────────────────────────────
+  工具                      状态            版本
+  ─────────────────────────────────────────────────────────────
+  GCC ARM Embedded          ✓ 已安装        13.2.1
+  CMake                     ✓ 已安装        4.2.1
+  Ninja                     ✓ 已安装        1.13.1
+  OpenOCD (MSPM0)           ✓ 已安装        0.12.0
+  ─────────────────────────────────────────────────────────────
+
+  ✅ 所有工具链已就绪，可以开始开发！
+```
+
+### ⚙️ 前置依赖
+
+脚本本身只需要 **Python 3.8+**（Windows 11 已内置，或从 [python.org](https://www.python.org/downloads/) 安装）。
+
+### 🔧 工具链版本要求
+
+| 工具 | 最低版本 | 推荐版本 | winget 安装 |
+|------|:---:|------|------|
+| GCC ARM Embedded | ≥ 10.0 | 13.2.1 | `Arm.GnuArmEmbeddedToolchain` |
+| CMake | ≥ 3.22 | 4.x | `Kitware.CMake` |
+| Ninja | ≥ 1.10 | 1.13.x | `Ninja-build.Ninja` |
+| OpenOCD | ≥ 0.11 | 0.12.0 | `xpack-dev-tools.openocd-xpack` |
+
+### 🛡️ 安全说明
+
+- 脚本**不会覆盖或修改**已安装的工具
+- 安装通过 `winget`（Windows 官方包管理器）执行，不直接操作 PATH
+- `--check` 模式（仅检测）完全不会改动系统任何东西
+- 脚本不依赖任何第三方 pip 包，仅使用 Python 标准库
 
 ## 📖 文档入口
 

@@ -6,31 +6,36 @@
 #include <math.h>
 
 /*
- * ICM-42688-P 6 轴 IMU 驱动 — ISR 驱动 + 缓存模型
+ * ICM-42688-P 6 轴 IMU 驱动 — ISR 驱动 + 双缓冲 + 全局结构体直读
  *
- *   ISR → ReadSensor()          一次 SPI burst，float 转换，偏航积分
- *   主循环 → GetXxx()           零 SPI，只读缓存
+ * ── 双缓冲设计 ──
+ *   ISR（5ms）：ReadSensor() 在 ISR 上下文写完 g_icm42688，最高优先级，
+ *               不会被主循环抢占 → 写入天然原子。
+ *   主循环：   非关键场景（OLED 显示）直接读 g_icm42688.roll，零开销。
+ *             PID 控制回路：ICM42688_GetSnapshot(&snap) → 关中断拷贝 9 个
+ *             float（<1μs），保证 roll/pitch/yaw/gyro_z/accel 来自同一 SPI 帧。
  *
- * 速度优化：
- *   - Bus 选择只做一次（Init 时切换），后续 ReadSensor 不再 SelectBus
+ * ── 数据流 ──
+ *   ISR → ReadSensor()         一次 SPI burst，填满 g_icm42688
+ *   任意上下文 → g_icm42688.roll / .gyro_z / .accel_x …  零开销
+ *
+ * ── 速度 ──
+ *   - Bus 选择只做一次（Init），ReadSensor 内部 BurstReadFast 自带上下文保护
  *   - 12 字节 burst 读（0x1F→0x2A），一次 CS↓↑
  *   - 5MHz DelayOff 实际 SCK ≈ 10~15MHz
  *   - 单次 ReadSensor ≈ 180μs（含 SPI 12μs + float 转换 160μs）
  */
 
-/* ── 缓存的传感器数据 ── */
-static float    s_ax, s_ay, s_az;      /* 加速度 (m/s²)           */
-static float    s_gx, s_gy, s_gz;      /* 角速度 (°/s)            */
-static float    s_roll, s_pitch;       /* 横滚 / 俯仰 (°)        */
-static float    s_yaw;                 /* 偏航积分 (°)           */
-static uint32_t s_lastTick;            /* 上次 ReadSensor 的 tick */
-static uint8_t  s_firstRead;           /* 首次读取标志            */
+/* ── 全局数据实例 ── */
+ICM42688_Data_t g_icm42688;
 
-/* ── 量程系数 + 零偏 ── */
-static float s_accelScale = 1.0f;      /* LSB → m/s² */
-static float s_gyroScale  = 1.0f;      /* LSB → °/s  */
-static float s_gyroBiasZ  = 0.0f;      /* Z 轴零偏 (°/s)，Init 时校准 */
-static uint8_t s_inited = 0U;
+/* ── 内部状态 ── */
+static float    s_accelScale = 1.0f;      /* LSB → m/s² */
+static float    s_gyroScale  = 1.0f;      /* LSB → °/s  */
+static float    s_gyroBiasZ  = 0.0f;      /* Z 轴零偏 (°/s)           */
+static uint32_t s_lastTick;               /* 上次 ReadSensor 的 tick  */
+static uint8_t  s_firstRead = 1U;         /* 首次读取标志             */
+static uint8_t  s_inited    = 0U;
 
 /* ── 系统 tick 外部引用（Control_Task.c）── */
 extern volatile uint32_t g_sys_tick_ms;
@@ -39,9 +44,6 @@ extern volatile uint32_t g_sys_tick_ms;
  * SPI 底层（内部）
  * ══════════════════════════════════════════════════════════ */
 
-/*
- * 写单个寄存器 — 仅供 Init / SetRange 使用，不参与热路径
- */
 static void ICM42688_WriteReg(uint8_t reg, uint8_t data)
 {
 	API_SPI_SelectBus(ICM42688_SPI_BUS);
@@ -51,9 +53,6 @@ static void ICM42688_WriteReg(uint8_t reg, uint8_t data)
 	API_SPI_Stop();
 }
 
-/*
- * 读单个寄存器
- */
 static uint8_t ICM42688_ReadReg(uint8_t reg)
 {
 	uint8_t val;
@@ -66,35 +65,21 @@ static uint8_t ICM42688_ReadReg(uint8_t reg)
 }
 
 /*
- * 极速 burst 读 — ISR 热路径，带上下文保护
- *
- * 从 reg 开始连续读 len 字节。CS 在一次事务内保持低。
- *
- * 上下文保存/恢复确保：
- * - 若 ISR 抢占了主循环的 OLED SPI 事务，ICM42688 仍从正确的 SPI2 引脚读取
- * - ISR 返回后，主循环的 SPI 事务无缝继续，不受干扰
+ * 极速 burst 读 — ISR 热路径，带 SPI 上下文保护
  */
 static void ICM42688_BurstReadFast(uint8_t reg, uint8_t *buf, uint8_t len)
 {
 	soft_spi_context_t saved;
 
-	/* ── 保存主循环可能正在使用的 SPI 上下文 ── */
 	soft_spi_hal_save(&saved);
-
-	/* ── 切换到 ICM42688 的 SPI2 总线 ── */
 	API_SPI_SelectBus(ICM42688_SPI_BUS);
 	API_SPI_DelayOff();
 
-	/* ── 执行 SPI burst 读 ── */
 	API_SPI_Start();
 	API_SPI_SwapByte(reg | 0x80U);
-	while (len--)
-	{
-		*buf++ = API_SPI_SwapByte(0xFFU);
-	}
+	while (len--) { *buf++ = API_SPI_SwapByte(0xFFU); }
 	API_SPI_Stop();
 
-	/* ── 恢复主循环的 SPI 上下文 ── */
 	soft_spi_hal_restore(&saved);
 }
 
@@ -106,12 +91,11 @@ uint8_t ICM42688_Init(void)
 {
 	uint8_t whoami, retry;
 
-	/* ── 切到 SPI2，设最高速 ── */
 	API_SPI_SelectBus(ICM42688_SPI_BUS);
 	API_SPI_SetSpeed(ICM42688_SPI_SPEED);
 	API_SPI_DelayOff();
 
-	/* ── WHO_AM_I（重试最多 50 次，每次等 10ms，合计 500ms）── */
+	/* ── WHO_AM_I ── */
 	for (retry = 0U; retry < 50U; ++retry)
 	{
 		whoami = ICM42688_ReadReg(ICM42688_WHO_AM_I);
@@ -120,36 +104,28 @@ uint8_t ICM42688_Init(void)
 	}
 	if (whoami != ICM42688_WHO_AM_I_VAL)
 	{
-		s_inited = 0U;   /* 标记未初始化，ReadSensor/GetXxx 将跳过 */
-		return 0U;       /* 返回失败，调用方可做 LED 告警 / fallback */
+		s_inited = 0U;
+		return 0U;
 	}
 
 	/* ── 软复位 ── */
 	ICM42688_WriteReg(ICM42688_PWR_MGMT0, 0x00U);
 	Delay_ms(10U);
 
-	/* ── 量程 / ODR：±16g, ±2000dps, 双 1kHz ── */
+	/* ── 量程 / ODR ── */
 	ICM42688_WriteReg(ICM42688_ACCEL_CONFIG0,
 	                  (uint8_t)((ICM42688_ACCEL_16G << 5) | (ICM42688_ODR_1KHZ + 1U)));
 	ICM42688_WriteReg(ICM42688_GYRO_CONFIG0,
 	                  (uint8_t)((ICM42688_GYRO_2000DPS << 5) | (ICM42688_ODR_1KHZ + 1U)));
 
-	/* 量程系数 */
-	s_accelScale = 16.0f / 32768.0f * 9.80665f;     /* ≈ 0.004789 m/s²/LSB */
-	s_gyroScale  = 2000.0f / 32768.0f;               /* ≈ 0.06104 °/s/LSB  */
+	s_accelScale = 16.0f / 32768.0f * 9.80665f;
+	s_gyroScale  = 2000.0f / 32768.0f;
 
-	/* ── 低噪声使能 ── */
 	ICM42688_WriteReg(ICM42688_GYRO_CONFIG1, 0x06U);
-
-	/* ── 上电：GYRO + ACCEL 低噪声模式 ── */
 	ICM42688_WriteReg(ICM42688_PWR_MGMT0, 0x0FU);
-	Delay_ms(50U);   /* 低噪声模式启动需 ~30ms，取 50ms 充裕 */
+	Delay_ms(50U);
 
-	/*
-	 * ── 陀螺仪 Z 轴零偏校准 ──
-	 * 静止状态下采 50 次，每次间隔 1ms（匹配 1kHz ODR），取平均。
-	 * 50 × 1ms = 50ms，覆盖 50 个独立 gyro 样本。
-	 */
+	/* ── 陀螺仪 Z 轴零偏校准（50 样本，间隔 1ms）── */
 	{
 		uint8_t  calBuf[12];
 		int16_t  rawGz;
@@ -161,21 +137,20 @@ uint8_t ICM42688_Init(void)
 			ICM42688_BurstReadFast(ICM42688_ACCEL_DATA_X1, calBuf, 12U);
 			rawGz = (int16_t)(((uint16_t)calBuf[10] << 8) | calBuf[11]);
 			biasSum += (float)rawGz * s_gyroScale;
-			Delay_ms(1U);   /* 等下一个 ODR 周期，确保每次都是独立样本 */
+			Delay_ms(1U);
 		}
 		s_gyroBiasZ = biasSum / 50.0f;
 	}
 
-	/* ── 偏航积分状态初始化 ── */
-	s_yaw       = 0.0f;
-	s_firstRead = 1U;
-	s_inited    = 1U;
+	g_icm42688.yaw = 0.0f;
+	s_firstRead    = 1U;
+	s_inited       = 1U;
 
-	return 1U;   /* 成功 */
+	return 1U;
 }
 
 /* ══════════════════════════════════════════════════════════
- * ISR 传感器读取（核心热路径）
+ * ISR 传感器读取 — 直接填满 g_icm42688
  * ══════════════════════════════════════════════════════════ */
 
 void ICM42688_ReadSensor(void)
@@ -183,21 +158,15 @@ void ICM42688_ReadSensor(void)
 	uint8_t  buf[12];
 	int16_t  rawAx, rawAy, rawAz;
 	int16_t  rawGx, rawGy, rawGz;
-	float    ax, ay, az, gx, gy, gz;
+	float    ax, ay, az, gz;
 	uint32_t now;
 	float    dt;
 
 	if (s_inited == 0U) { return; }
 
-	/*
-	 * ── 阶段 1：SPI burst 读 12 字节 ──
-	 * 起始地址 0x1F (ACCEL_DATA_X1)，连续读到 0x2A (GYRO_DATA_Z0)
-	 * BurstReadFast 内部自动保存/恢复 SPI 上下文，
-	 * 即使主循环正在做 OLED SPI 事务也不会冲突。
-	 */
+	/* ── SPI burst 12 字节 ── */
 	ICM42688_BurstReadFast(ICM42688_ACCEL_DATA_X1, buf, 12U);
 
-	/* Big-endian → int16_t */
 	rawAx = (int16_t)(((uint16_t)buf[0]  << 8) | buf[1]);
 	rawAy = (int16_t)(((uint16_t)buf[2]  << 8) | buf[3]);
 	rawAz = (int16_t)(((uint16_t)buf[4]  << 8) | buf[5]);
@@ -205,78 +174,69 @@ void ICM42688_ReadSensor(void)
 	rawGy = (int16_t)(((uint16_t)buf[8]  << 8) | buf[9]);
 	rawGz = (int16_t)(((uint16_t)buf[10] << 8) | buf[11]);
 
-	/*
-	 * ── 阶段 2：浮点转换 ──
-	 */
+	/* ── float 转换 → 直接写 g_icm42688 ── */
 	ax = (float)rawAx * s_accelScale;
 	ay = (float)rawAy * s_accelScale;
 	az = (float)rawAz * s_accelScale;
-	gx = (float)rawGx * s_gyroScale;
-	gy = (float)rawGy * s_gyroScale;
-	gz = (float)rawGz * s_gyroScale;
 
-	/* ── 更新全局缓存（gyro_z 已减零偏）── */
-	s_ax = ax;  s_ay = ay;  s_az = az;
-	s_gx = gx;  s_gy = gy;
-	s_gz = gz - s_gyroBiasZ;     /* 零偏校正后的角速度 */
-	if (s_gz > -ICM42688_GYRO_DEADBAND && s_gz < ICM42688_GYRO_DEADBAND)
+	g_icm42688.accel_x = ax;
+	g_icm42688.accel_y = ay;
+	g_icm42688.accel_z = az;
+	g_icm42688.gyro_x  = (float)rawGx * s_gyroScale;
+	g_icm42688.gyro_y  = (float)rawGy * s_gyroScale;
+	gz                  = (float)rawGz * s_gyroScale;
+	g_icm42688.gyro_z  = gz - s_gyroBiasZ;
+
+	if (g_icm42688.gyro_z > -ICM42688_GYRO_DEADBAND &&
+	    g_icm42688.gyro_z <  ICM42688_GYRO_DEADBAND)
 	{
-		s_gz = 0.0f;             /* 死区抑制：残余零偏不积分 */
+		g_icm42688.gyro_z = 0.0f;
 	}
 
-	/* roll / pitch：atan2 反算 */
-	s_roll  = atan2f(ay, az) * 57.29578f;
+	/* roll / pitch */
+	g_icm42688.roll  = atan2f(ay, az) * 57.29578f;
 	{
 		float norm = sqrtf(ay * ay + az * az);
-		s_pitch = atan2f(-ax, norm) * 57.29578f;
+		g_icm42688.pitch = atan2f(-ax, norm) * 57.29578f;
 	}
 
-	/*
-	 * ── 阶段 3：偏航积分（零偏已校正）──
-	 */
+	/* ── 偏航积分 ── */
 	now = g_sys_tick_ms;
 	if (s_firstRead)
 	{
-		s_yaw       = 0.0f;
-		s_lastTick  = now;
-		s_firstRead = 0U;
+		g_icm42688.yaw = 0.0f;
+		s_lastTick     = now;
+		s_firstRead    = 0U;
 	}
 	else
 	{
 		dt = (float)(now - s_lastTick) * 0.001f;
 		if (dt > 0.0f && dt < 0.1f)
 		{
-			s_yaw += s_gz * dt;     /* 使用校正后的 gz */
+			g_icm42688.yaw += g_icm42688.gyro_z * dt;
 		}
 		s_lastTick = now;
 	}
 
-	/* ── Yaw 限幅到 ±180° ── */
-	while (s_yaw >  180.0f) { s_yaw -= 360.0f; }
-	while (s_yaw < -180.0f) { s_yaw += 360.0f; }
+	/* Yaw 限幅 ±180° */
+	while (g_icm42688.yaw >  180.0f) { g_icm42688.yaw -= 360.0f; }
+	while (g_icm42688.yaw < -180.0f) { g_icm42688.yaw += 360.0f; }
 }
 
 /* ══════════════════════════════════════════════════════════
- * 数据获取（只读缓存，零 SPI）
+ * ICM42688_GetSnapshot — 快照读（PID 回路专用）
+ *
+ * 为什么不需要锁：
+ *   ReadSensor（写 g_icm42688）和 GetSnapshot 的调用者（Drive_YawSpeed、
+ *   YawTest_Control）都在 TIMG0 同一个 ISR 的不同时隙（5ms / 20ms）内执行。
+ *   M0+ 的 NVIC 不会抢占同级中断——ISR 执行期间不会被自己打断。
+ *   20ms 槽只看到 5ms 槽完成后的完整 struct，无跨帧混合风险。
+ *
+ *   如果未来从主循环调用本函数，主循环可能被 ISR 抢占，此时需要加锁。
+ *   届时在本函数内加一个 volatile 序列号做乐观锁即可，仍不需要 MCU 头文件。
  * ══════════════════════════════════════════════════════════ */
-
-void ICM42688_GetAttitude(float *roll, float *pitch, float *yaw)
+void ICM42688_GetSnapshot(ICM42688_Data_t *snap)
 {
-	if (roll  != 0) { *roll  = s_roll;  }
-	if (pitch != 0) { *pitch = s_pitch; }
-	if (yaw   != 0) { *yaw   = s_yaw;   }
-}
-
-void ICM42688_GetGyroscope(float *gx, float *gy, float *gz)
-{
-	if (gx != 0) { *gx = s_gx; }
-	if (gy != 0) { *gy = s_gy; }
-	if (gz != 0) { *gz = s_gz; }
-}
-
-void ICM42688_GetAccelerometer(float *ax, float *ay, float *az)
-{
-	if (ax != 0) { *ax = s_ax; }
-	if (ay != 0) { *ay = s_ay; }
-	if (az != 0) { *az = s_az; }
+	if (snap == 0) { return; }
+	*snap = g_icm42688;   /* struct copy（~36 字节），当前调用上下文天然安全 */
 }

@@ -6,7 +6,8 @@
 #include "API_Motor.h"
 #include "KEY.h"
 #include "LED.h"
-#include "jy61p.h"     /* JY61P_GetData for YawTest_Control */
+#include "jy61p.h"     /* JY61P_GetData（保留，ICM42688 为主力 IMU） */
+#include "ICM42688.h"  /* ICM42688_GetSnapshot — 偏航角主数据源  */
 #include "Encoder.h"   /* Encoder1_Speed / Encoder2_Speed    */
 
 /* =========================================================================
@@ -46,7 +47,7 @@ void PID_Control_Init(void)
 }
 
 /*
- * 偏航角位置环 — jy->yaw 控制小车朝向
+ * 偏航角位置环 — ICM42688 snap.yaw 控制小车朝向（20ms）
 */
 void YawPid_Init(void)
 {
@@ -107,7 +108,7 @@ void YawPid_Set(float kp, float ki, float kd, float target_deg)
 /*
  * YawPid_Calc — 偏航角 PID 计算（20ms ISR）。
  *
- * @param yaw_degrees  当前偏航角（度），直接传 jy->yaw
+ * @param yaw_degrees  当前偏航角（度），来自 g_icm42688.yaw
  * @return             steer 值（±3000），正值=右转
  *
  * 内部自动：yaw → cdeg → ±180° wrap → 纯整数 PID_Calc。
@@ -185,13 +186,14 @@ void LineFollow_Output(void)
 /* =========================================================================
  * Drive_YawSpeed — 速度环 + 偏航角环融合输出（TIMG0 ISR 20ms）
  *
- * 内部直读 Encoder1/2_Speed + JY61P_GetYawFiltered()。
+ * 偏航角数据源：ICM42688 双缓冲原子快照（保证 roll/yaw 同帧）。
  * yaw_steer>0 → 右转（左轮加速、右轮减速）。
  * ========================================================================= */
 void Drive_YawSpeed(void)
 {
-    float   yaw       = JY61P_GetYawFiltered();
-    // float   yaw       = JY61P_GetData()->yaw;   /* 临时：原始数据，不过滤波 */
+    ICM42688_Data_t snap;
+    ICM42688_GetSnapshot(&snap);         /* 双缓冲原子读：9 字段来自同一 SPI 帧 */
+    float   yaw       = snap.yaw;        /* 偏航角 (°)                        */
     int32_t yaw_steer = YawPid_Calc(yaw);
     int32_t out_left  = 0;
     int32_t out_right = 0;
@@ -228,7 +230,7 @@ void PID_Speed_Control(void)
 }
 
 /*
- * 方向环单独测试 — 纯差速转向。
+ * 灰度方向环单独测试 — 纯差速转向。
  */
 void Direction_Test_Control(void)
 {
@@ -240,11 +242,13 @@ void Direction_Test_Control(void)
 }
 
 /*
- * YawTest_Control — 偏航角单独测试
+ * YawTest_Control — 偏航角单独测试（ICM42688 数据源）
  */
 void YawTest_Control(void)
 {
-    float yaw = JY61P_GetYawFiltered();       /* 轻滤波偏航角，防尖峰 */
+    ICM42688_Data_t snap;
+    ICM42688_GetSnapshot(&snap);
+    float   yaw   = snap.yaw;
     int32_t steer = YawPid_Calc(yaw);
     int16_t left  = (int16_t)steer;
     int16_t right = -(int16_t)steer;

@@ -10,7 +10,7 @@
 #include "Encoder.h"
 #include "G3507_Encoder.h"
 #include "gray_adc.h"
-#include "jy61p.h"
+// #include "jy61p.h"
 #include "API_Motor.h"
 #include "ICM42688.h"
 
@@ -57,7 +57,7 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
         tick_5ms = 0U;
 
         GrayADC_Task(&g_graySensor);
-        JY61P_Task();           /* JY61P 偏航角数据包 */
+        // JY61P_Task();           /* JY61P 偏航角数据包 */
 		ICM42688_ReadSensor();  /* ICM42688 6轴 burst读 + 偏航积分 */
 
         /* 出入线检测 → 互斥置位：一方触发则清零对方，保证两者不同时为 1 */
@@ -76,7 +76,7 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
 		G3507_Encoder_SnapshotAll();
 		Encoder1_Speed =  API_Encoder_GetSpeed(API_ENCODER_1);
 		Encoder2_Speed = -API_Encoder_GetSpeed(API_ENCODER_2);
-        PID_Speed_Control();
+        // PID_Speed_Control();
         // Task_Run();
 	}
 
@@ -117,7 +117,6 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
 {
     uint32_t data;
     uint8_t rxValid;
-
     do
     {
         data    = 0U;
@@ -125,10 +124,10 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
         usart_irq_dispatch_by_id(id, &data, &rxValid);
         if (rxValid != 0U)
         {
-            if (id == API_USART2)
-            {
-                JY61P_RxPush((uint8_t)data);  /* 只入队，解析交给主循环 JY61P_Task() */
-            }
+            // if (id == API_USART2)
+            // {
+            //     JY61P_RxPush((uint8_t)data);  /* 只入队，解析交给主循环 JY61P_Task() */
+            // }
         }
     } while (rxValid != 0U);
 }

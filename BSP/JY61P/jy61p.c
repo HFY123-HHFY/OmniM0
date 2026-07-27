@@ -304,8 +304,8 @@ float JY61P_GetTemp(void)
 #define JY61P_REG_UNLOCK   0x69U   /* 解锁寄存器        */
 #define JY61P_UNLOCK_VAL   0xB588U /* 解锁魔数          */
 
-#define JY61P_USART         USART4       /* JY61P 串口寄存器：改这里统一切换 TX/RX */
-#define JY61P_USART_ID      API_USART4   /* JY61P 串口逻辑 ID：对应 API_USART_Id_t */
+#define JY61P_USART         USART2       /* JY61P 串口寄存器：改这里统一切换 TX/RX */
+#define JY61P_USART_ID      API_USART2   /* JY61P 串口逻辑 ID：对应 API_USART_Id_t */
 
 /* ── 发送 5 字节指令包（阻塞 TX，不经过异步队列，避免初始化阶段竞争）── */
 static void JY61P_SendCmd(uint8_t addr, uint16_t data)

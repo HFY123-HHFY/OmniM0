@@ -46,7 +46,7 @@ void YawTest_Control(void);             /* 偏航角单独测试（纯差速，�
 void Direction_Control(void);
 
 /*
- * 电机输出限幅到 TB6612_MAX_DUTY (±400)。
+ * 电机输出限幅到 API_MOTOR_MAX_DUTY。
  */
 void MotorOutput_Clamp(int16_t *left, int16_t *right);
 

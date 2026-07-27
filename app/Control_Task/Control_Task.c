@@ -11,7 +11,7 @@
 #include "G3507_Encoder.h"
 #include "gray_adc.h"
 #include "jy61p.h"
-#include "TB6612.h"
+#include "API_Motor.h"
 #include "ICM42688.h"
 
 /* ══════════════════════════════════════════════════════════════════════

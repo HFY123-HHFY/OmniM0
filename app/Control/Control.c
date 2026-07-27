@@ -3,7 +3,7 @@
 #include "My_Usart/My_Usart.h"          /* usart_printf */
 #include "Control_Task/Control_Task.h"   /* NonBlockDelay_t */
 #include "pwm.h"
-#include "TB6612.h"
+#include "API_Motor.h"
 #include "KEY.h"
 #include "LED.h"
 #include "jy61p.h"     /* JY61P_GetData for YawTest_Control */
@@ -145,14 +145,14 @@ void Direction_Control(void)
 }
 
 /* =========================================================================
- * MotorOutput_Clamp — 电机输出限幅到 TB6612_MAX_DUTY (±4000)
+ * MotorOutput_Clamp — 电机输出限幅到 API_MOTOR_MAX_DUTY (±4000)
  * ========================================================================= */
 void MotorOutput_Clamp(int16_t *left, int16_t *right)
 {
-    if (*left  >  (int16_t)TB6612_MAX_DUTY) *left  =  (int16_t)TB6612_MAX_DUTY;
-    if (*left  < -(int16_t)TB6612_MAX_DUTY) *left  = -(int16_t)TB6612_MAX_DUTY;
-    if (*right >  (int16_t)TB6612_MAX_DUTY) *right =  (int16_t)TB6612_MAX_DUTY;
-    if (*right < -(int16_t)TB6612_MAX_DUTY) *right = -(int16_t)TB6612_MAX_DUTY;
+    if (*left  >  (int16_t)API_MOTOR_MAX_DUTY) *left  =  (int16_t)API_MOTOR_MAX_DUTY;
+    if (*left  < -(int16_t)API_MOTOR_MAX_DUTY) *left  = -(int16_t)API_MOTOR_MAX_DUTY;
+    if (*right >  (int16_t)API_MOTOR_MAX_DUTY) *right =  (int16_t)API_MOTOR_MAX_DUTY;
+    if (*right < -(int16_t)API_MOTOR_MAX_DUTY) *right = -(int16_t)API_MOTOR_MAX_DUTY;
 }
 
 /* =========================================================================
@@ -179,7 +179,7 @@ void LineFollow_Output(void)
 
     /* ── 3. 限幅 + 写电机 ── */
     MotorOutput_Clamp(&left, &right);
-    TB6612_SetSpeed(left, right);
+    API_Motor_SetSpeed(left, right);
 }
 
 /* =========================================================================
@@ -206,7 +206,7 @@ void Drive_YawSpeed(void)
     right = (int16_t)out_right - (int16_t)yaw_steer;
 
     MotorOutput_Clamp(&left, &right);
-    TB6612_SetSpeed(left, right);
+    API_Motor_SetSpeed(left, right);
 }
 
 /*
@@ -224,7 +224,7 @@ void PID_Speed_Control(void)
     right = (int16_t)out_right;
 
     MotorOutput_Clamp(&left, &right);
-    TB6612_SetSpeed(left, right);
+    API_Motor_SetSpeed(left, right);
 }
 
 /*
@@ -236,7 +236,7 @@ void Direction_Test_Control(void)
     int16_t right = (int16_t)g_steer;
 
     MotorOutput_Clamp(&left, &right);
-    TB6612_SetSpeed(left, right);
+    API_Motor_SetSpeed(left, right);
 }
 
 /*
@@ -249,5 +249,5 @@ void YawTest_Control(void)
     int16_t left  = (int16_t)steer;
     int16_t right = -(int16_t)steer;
     MotorOutput_Clamp(&left, &right);
-    TB6612_SetSpeed(left, right);
+    API_Motor_SetSpeed(left, right);
 }

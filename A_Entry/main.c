@@ -29,7 +29,7 @@
 #include "OLED.h"
 #include "Control.h"
 #include "TB6612.h"
-#include "AT4950.h"
+#include "API_Motor.h"
 #include "ICM42688.h"
 #include "gray_adc.h"
 #include "MPU6050.h"
@@ -89,7 +89,7 @@ int main(void)
 	usart_printf(USART1, "ICM42688=%d\r\n", icmOk);
 	JY61P_Init();							/* JY61P 陀螺仪数据结构初始化 */
 	// TB6612_Init(); 						/* TB6612 电机驱动初始化（已换用 AT4950） */
-	AT4950_Init();							/* 电机驱动上电刹车，防止误触发 */
+	API_Motor_Init();						/* 电机驱动上电刹车（当前=AT4950） */
 	API_Encoder_Init(API_ENCODER_1); 		/* 编码器 1 初始化 */
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
@@ -128,24 +128,24 @@ int main(void)
 		if (Key == 1U)
 		{
 			LED_Control(LED1, LED_HIGH);
-			AT4950_SetSpeed(3000, 3000);
+			API_Motor_SetSpeed(3000, 3000);
 		}
 		if (Key == 2U)
 		{
 			LED_Control(LED2, LED_HIGH);
-			AT4950_SetSpeed(0, 3000);
+			API_Motor_SetSpeed(0, 3000);
 		}
 		if (Key == 3U)
 		{
 			LED_Control(LED3, LED_HIGH);
-			AT4950_SetSpeed(-3000, -3000);
+			API_Motor_SetSpeed(-3000, -3000);
 		}
 		if (Key == 4U)
 		{
 			LED_Control(LED1, LED_LOW);
 			LED_Control(LED2, LED_LOW);
 			LED_Control(LED3, LED_LOW);
-			AT4950_SetSpeed(0,0);
+			API_Motor_SetSpeed(0,0);
 		}
 		/* 串口打印 50ms */
 #if (DEBUG_PRINT_ENABLE == 1U)

@@ -4,7 +4,7 @@
 #include "Control_Task/Control_Task.h"  /* NonBlockDelay_t */
 #include "jy61p.h"     /* JY61P_GetYawFiltered */
 #include "PID/PID.h"
-#include "TB6612.h"
+#include "API_Motor.h"
 #include "KEY.h"
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -39,7 +39,7 @@ void Task_Stop(void)
     s_task_active  = 0U;
     s_task2_pos    = 0U;
     s_task3_pos    = 0U;
-    TB6612_SetSpeed(0, 0);
+    API_Motor_SetSpeed(0, 0);
     PID_Reset(&direction_pid);
     PID_Reset(&speed_loop.left);
     PID_Reset(&speed_loop.right);
@@ -430,10 +430,10 @@ static void Task34_Run(uint8_t max_laps)
             s_spin_tick = TASK3_SPIN_TICKS_A;
         }
         /* 左转：左轮后、右轮前 → 逆时针旋转 */
-        TB6612_SetSpeed(-(int16_t)TASK3_SPIN_DUTY_A, (int16_t)TASK3_SPIN_DUTY_A);
+        API_Motor_SetSpeed(-(int16_t)TASK3_SPIN_DUTY_A, (int16_t)TASK3_SPIN_DUTY_A);
         if (--s_spin_tick == 0U)
         {
-            TB6612_SetSpeed(0, 0);  /* 旋转结束先停车 */
+            API_Motor_SetSpeed(0, 0);  /* 旋转结束先停车 */
             s_state = T3_A_C_GO;
         }
         break;
@@ -499,10 +499,10 @@ static void Task34_Run(uint8_t max_laps)
             s_spin_tick = TASK3_SPIN_TICKS_B;
         }
         /* 左转：左轮后、右轮前 → 逆时针旋转 */
-        TB6612_SetSpeed(-(int16_t)TASK3_SPIN_DUTY_B, (int16_t)TASK3_SPIN_DUTY_B);
+        API_Motor_SetSpeed(-(int16_t)TASK3_SPIN_DUTY_B, (int16_t)TASK3_SPIN_DUTY_B);
         if (--s_spin_tick == 0U)
         {
-            TB6612_SetSpeed(0, 0);  /* 旋转结束先停车 */
+            API_Motor_SetSpeed(0, 0);  /* 旋转结束先停车 */
             s_state = T3_B_D_GO;
         }
         break;

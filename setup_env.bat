@@ -11,7 +11,7 @@ echo.
 :: 检查 Python 是否可用
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo   [错误] 未检测到 Python！
+    echo   [错误] 未检测到 Python!
     echo.
     echo   请先安装 Python 3.8+ 后再运行此脚本：
     echo   https://www.python.org/downloads/

@@ -76,6 +76,7 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
 		G3507_Encoder_SnapshotAll();
 		Encoder1_Speed =  API_Encoder_GetSpeed(API_ENCODER_1);
 		Encoder2_Speed = -API_Encoder_GetSpeed(API_ENCODER_2);
+        PID_Speed_Control();
         // Task_Run();
 	}
 

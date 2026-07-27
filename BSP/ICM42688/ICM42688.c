@@ -1,5 +1,6 @@
 #include "ICM42688.h"
 #include "API_SPI.h"
+#include "soft_spi_hal.h"   /* soft_spi_context_t + save/restore（ISR 抢占保护） */
 #include "BusRate.h"
 #include "Delay.h"
 #include <math.h>
@@ -65,12 +66,26 @@ static uint8_t ICM42688_ReadReg(uint8_t reg)
 }
 
 /*
- * 极速 burst 读 — 热路径，不做 bus 选择（假设已选 SPI2）
+ * 极速 burst 读 — ISR 热路径，带上下文保护
  *
  * 从 reg 开始连续读 len 字节。CS 在一次事务内保持低。
+ *
+ * 上下文保存/恢复确保：
+ * - 若 ISR 抢占了主循环的 OLED SPI 事务，ICM42688 仍从正确的 SPI2 引脚读取
+ * - ISR 返回后，主循环的 SPI 事务无缝继续，不受干扰
  */
 static void ICM42688_BurstReadFast(uint8_t reg, uint8_t *buf, uint8_t len)
 {
+	soft_spi_context_t saved;
+
+	/* ── 保存主循环可能正在使用的 SPI 上下文 ── */
+	soft_spi_hal_save(&saved);
+
+	/* ── 切换到 ICM42688 的 SPI2 总线 ── */
+	API_SPI_SelectBus(ICM42688_SPI_BUS);
+	API_SPI_DelayOff();
+
+	/* ── 执行 SPI burst 读 ── */
 	API_SPI_Start();
 	API_SPI_SwapByte(reg | 0x80U);
 	while (len--)
@@ -78,6 +93,9 @@ static void ICM42688_BurstReadFast(uint8_t reg, uint8_t *buf, uint8_t len)
 		*buf++ = API_SPI_SwapByte(0xFFU);
 	}
 	API_SPI_Stop();
+
+	/* ── 恢复主循环的 SPI 上下文 ── */
+	soft_spi_hal_restore(&saved);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -174,7 +192,8 @@ void ICM42688_ReadSensor(void)
 	/*
 	 * ── 阶段 1：SPI burst 读 12 字节 ──
 	 * 起始地址 0x1F (ACCEL_DATA_X1)，连续读到 0x2A (GYRO_DATA_Z0)
-	 * 假设 SPI2 已由 Init 选中且未被他设备切换（OLED=SPI1, 不冲突）
+	 * BurstReadFast 内部自动保存/恢复 SPI 上下文，
+	 * 即使主循环正在做 OLED SPI 事务也不会冲突。
 	 */
 	ICM42688_BurstReadFast(ICM42688_ACCEL_DATA_X1, buf, 12U);
 

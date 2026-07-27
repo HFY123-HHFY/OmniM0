@@ -194,8 +194,9 @@ void key_Get(void)
 	/*
 	 * 按键路由（互斥，一次只处理一个键值）：
 	 *   KEY1 → Key=1U（Task_Run toggle 启停）
-	 *   KEY2 → 循环 s_task_select 1→4（不写 Key，仅切换任务号）
-	 *   KEY3 → 未使用
+	 *   KEY2 → 循环 s_task_select 1→4 + Key=2U
+	 *   KEY3 → Key=3U
+	 *   KEY4 → Key=4U
 	 */
 	if (KeyNum == 1U)
 	{
@@ -205,5 +206,14 @@ void key_Get(void)
 	{
 		s_task_select++;
 		if (s_task_select > 4U) { s_task_select = 1U; }
+		Key = 2U;
+	}
+	else if (KeyNum == 3U)
+	{
+		Key = 3U;
+	}
+	else if (KeyNum == 4U)
+	{
+		Key = 4U;
 	}
 }

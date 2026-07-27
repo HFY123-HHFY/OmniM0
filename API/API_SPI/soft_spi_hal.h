@@ -38,4 +38,37 @@ void soft_spi_hal_set_speed(uint32_t speedKhz);
 void soft_spi_hal_delay_off(void);
 void soft_spi_hal_delay_on(void);
 
+/* ══════════════════════════════════════════════════════════
+ * SPI 上下文保存/恢复（ISR 抢占保护）
+ * ══════════════════════════════════════════════════════════
+ *
+ * 当 ISR（如 ICM42688 @5ms TIMG0）需要抢占主循环的 SPI 事务时：
+ *   1. ISR 调用 soft_spi_hal_save() 保存当前总线上下文
+ *   2. ISR 切换到自己的总线并完成 SPI 事务
+ *   3. ISR 调用 soft_spi_hal_restore() 恢复主循环的总线上下文
+ *
+ * 这确保了两路 SPI 总线的 GPIO 操作互不干扰，
+ * 且主循环的事务在 ISR 返回后能无缝继续。
+ */
+
+/* SPI 上下文：保存当前总线的全部 GPIO 寄存器指针和延时参数。 */
+typedef struct
+{
+	void  *csReg;
+	void  *sckReg;
+	void  *mosiReg;
+	void  *misoReg;
+	uint32_t csPin;
+	uint32_t sckPin;
+	uint32_t mosiPin;
+	uint32_t misoPin;
+	uint8_t  delayUs;
+	uint8_t  delayOff;
+} soft_spi_context_t;
+
+/* 保存当前软件 SPI 上下文到 ctx。 */
+void soft_spi_hal_save(soft_spi_context_t *ctx);
+/* 从 ctx 恢复软件 SPI 上下文。 */
+void soft_spi_hal_restore(const soft_spi_context_t *ctx);
+
 #endif /* __SOFT_SPI_HAL_H */

@@ -16,5 +16,9 @@
     "files.watcherExclude": {
         "Middlewares/FreeRTOS-LTS": true,
         "Drivers/Drivers_M0G3507/source": true
-    }
+    },
+    "python.analysis.extraPaths": [
+        "C:\\Users\\63459\\.kendryte\\k230_canmv_stubs\\db23dc421c63b6f6b3010fd16ad3ac8db57c6f83"
+    ],
+    "python.analysis.stubPath": "C:\\Users\\63459\\.kendryte\\k230_canmv_pylance\\e04b4eb7f187e2ec\\typings"
 }

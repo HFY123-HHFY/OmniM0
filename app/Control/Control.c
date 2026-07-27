@@ -212,14 +212,13 @@ void Drive_YawSpeed(void)
 /*
  * 速度环独立控制（纯速度模式）。
  */
-void PID_Speed_Control(int32_t actual_left, int32_t actual_right)
+void PID_Speed_Control(void)
 {
     int32_t out_left  = 0;
     int32_t out_right = 0;
     int16_t left, right;
 
-    PID_EncoderSpeed_Control(&speed_loop, actual_left, actual_right,
-                             &out_left, &out_right);
+    PID_EncoderSpeed_Control(&speed_loop, (int32_t)Encoder1_Speed, (int32_t)Encoder2_Speed, &out_left, &out_right);
 
     left  = (int16_t)out_left;
     right = (int16_t)out_right;

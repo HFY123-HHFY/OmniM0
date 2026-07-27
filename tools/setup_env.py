@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-OmniM0 开发环境一键安装脚本
+Omni架构 开发环境一键安装脚本
 ============================
 自动检测、安装、验证嵌入式开发工具链：
   - GCC ARM Embedded (arm-none-eabi-gcc)
   - CMake + Ninja
-  - OpenOCD (MSPM0 烧录)
+  - OpenOCD (烧录)
 
 用法:
   python tools/setup_env.py              # 交互式：检测 → 安装 → 验证
@@ -14,7 +14,7 @@ OmniM0 开发环境一键安装脚本
 
 安全保证:
   - 已安装的工具不会被覆盖或修改
-  - 所有安装通过 winget（Windows 官方包管理器），不直接操作 PATH
+  - 所有安装通过 winget(Windows 官方包管理器)，不直接操作 PATH
   - 脚本无外部依赖，仅使用 Python 标准库
 """
 
@@ -142,7 +142,7 @@ TOOLS = [
         winget_id="Arm.GnuArmEmbeddedToolchain",
         manual_url="https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads",
         manual_note=(
-            "下载 Windows .exe 安装包（推荐 13.2 Rel1），"
+            "下载 Windows .exe 安装包(推荐 13.2 Rel1),"
             "安装时务必勾选 'Add path to environment variable'"
         ),
         version_line=0,
@@ -158,7 +158,7 @@ TOOLS = [
         winget_id="Kitware.CMake",
         manual_url="https://cmake.org/download/",
         manual_note=(
-            "下载 Windows x64 Installer，安装时选择 'Add CMake to system PATH'"
+            "下载 Windows x64 Installer,安装时选择 'Add CMake to system PATH'"
         ),
         version_line=0,
     ),
@@ -173,13 +173,13 @@ TOOLS = [
         winget_id="Ninja-build.Ninja",
         manual_url="https://github.com/ninja-build/ninja/releases",
         manual_note=(
-            "下载 ninja-win.zip，将 ninja.exe 解压到 C:\\Windows 或任意 PATH 目录"
+            "下载 ninja-win.zip,将 ninja.exe 解压到 C:\\Windows 或任意 PATH 目录"
         ),
         version_line=0,
     ),
     ToolDef(
         tool_id="openocd",
-        name="OpenOCD (MSPM0)",
+        name="OpenOCD (烧录)",
         exe="openocd",
         version_args=["--version"],
         version_regex=r"(\d+\.\d+\.\d+)",
@@ -188,7 +188,7 @@ TOOLS = [
         winget_id="xpack-dev-tools.openocd-xpack",
         manual_url="https://github.com/openocd-org/openocd/releases",
         manual_note=(
-            '下载 0.12.0 Windows 版本，解压到 C:\\openocd，将 bin 目录加入系统 PATH'
+            '下载 0.12.0 Windows 版本，解压到 C:\\openocd,将 bin 目录加入系统 PATH'
         ),
         alt_exes=["openocd-xpack"],
         version_line=0,
@@ -217,7 +217,7 @@ VSCODE_EXTENSIONS = [
     {
         "id": "marus25.cortex-debug",
         "name": "Cortex-Debug",
-        "desc": "ARM Cortex-M GDB 调试（配合 OpenOCD）",
+        "desc": "ARM Cortex-M GDB 调试(配合 OpenOCD)",
     },
 ]
 
@@ -357,13 +357,13 @@ def install_via_winget(tool: ToolDef) -> tuple:
     返回 (success: bool, message: str)
     """
     if not _winget_available():
-        return False, "winget 不可用（需要 Windows 10 1809+）"
+        return False, "winget 不可用(需要 Windows 10 1809+)"
 
     if not tool.winget_id:
         return False, "该工具无 winget 包"
 
     print(f"\n  {C.c('📦')} winget install {C.b(tool.winget_id)} ...")
-    print(f"  {C.dim('（下载可能较慢，请耐心等待...）')}")
+    print(f"  {C.dim('(下载可能较慢，请耐心等待...)')}")
 
     try:
         result = subprocess.run(
@@ -493,18 +493,18 @@ def print_vscode_extensions():
     print()
     print(
         C.dim(
-            "  已写入 .vscode/extensions.json，用 VS Code 打开工程时会自动提示安装"
+            "  已写入 .vscode/extensions.json,用 VS Code 打开工程时会自动提示安装"
         )
     )
     print()
 
 
 def print_manual_install_guide(missing: list):
-    """打印手动安装指南（winget 失败时的兜底方案）"""
+    """打印手动安装指南(winget 失败时的兜底方案)"""
     print()
-    print(C.y("  ═══════════════════════════════════════════"))
+    print(C.y("  =========================================="))
     print(C.y("  📖 手动安装指南"))
-    print(C.y("  ═══════════════════════════════════════════"))
+    print(C.y("  =========================================="))
     print()
 
     for r in missing:
@@ -571,7 +571,7 @@ def main():
     _init_color()
 
     parser = argparse.ArgumentParser(
-        description="OmniM0 开发环境一键安装脚本",
+        description="Omni架构 开发环境一键安装脚本",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
@@ -593,7 +593,7 @@ def main():
     parser.add_argument(
         "--version",
         action="version",
-        version=f"OmniM0 setup_env.py v{VERSION}",
+        version=f"Omni架构 setup_env.py v{VERSION}",
     )
 
     args = parser.parse_args()
@@ -650,7 +650,7 @@ def main():
 
         winget_ok = _winget_available()
         if not winget_ok:
-            print(C.y("  ⚠️  未检测到 winget，无法自动安装。"))
+            print(C.y("  ⚠️  未检测到 winget,无法自动安装。"))
             print_manual_install_guide(to_install)
             sys.exit(1)
 
@@ -669,7 +669,7 @@ def main():
 
         winget_ok = _winget_available()
         if not winget_ok:
-            print(C.y("  ⚠️  未检测到 winget，无法自动安装。"))
+            print(C.y("  ⚠️  未检测到 winget,无法自动安装。"))
             print_manual_install_guide(to_install)
             sys.exit(1)
 

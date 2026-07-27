@@ -65,7 +65,7 @@ void Drive_YawSpeed(void);
 /*
  * 速度环独立控制（纯速度模式，不使用方向环 steer）。
  */
-void PID_Speed_Control(int32_t actual_left, int32_t actual_right);
+void PID_Speed_Control(void);
 
 /*
  * 方向环单独测试（纯差速转向，绕过速度环）。

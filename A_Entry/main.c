@@ -37,8 +37,8 @@
 #include "jy61p.h"
 
 /* ── 调试开关 ── */
-#define DEBUG_PRINT_ENABLE  1U   /* 开启/关闭串口 printf 调试输出 */
-#define DEBUG_OLED_ENABLE   0U   /* 开启/关闭 OLED 显示            */
+#define DEBUG_PRINT_ENABLE  0U   /* 开启/关闭串口 printf 调试输出 */
+#define DEBUG_OLED_ENABLE   1U   /* 开启/关闭 OLED 显示            */
 
 int main(void)
 {
@@ -94,7 +94,7 @@ int main(void)
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
 
-	JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒（CPU 循环延时，不依赖 tick） */
+	// JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒（CPU 循环延时，不依赖 tick） */
 
 	API_TIM_Init(API_TIM1, 1U); /* TIMG0 1ms ISR 启动 —— 所有硬件已就绪 */
 	Buzzer_Beep(200);           /* 蜂鸣器短鸣 200ms，非阻塞（依赖 g_sys_tick_ms） */
@@ -113,7 +113,7 @@ int main(void)
 
 		/* ── 蜂鸣器/LED 调度 @5ms ── */
 		if (tasks.buzzer_5ms.flag)
-		{               
+		{ 
 			tasks.buzzer_5ms.flag = false;
 			Buzzer_Task();
 		}
@@ -125,35 +125,35 @@ int main(void)
 			key_Get();
 		}
 
-		// if (Key == 1U)
-		// {
-		// 	LED_Control(LED1, LED_HIGH);
-		// 	AT4950_SetSpeed(1000, 1000);
-		// }
-		// if (Key == 2U)
-		// {
-		// 	LED_Control(LED2, LED_HIGH);
-		// 	AT4950_SetSpeed(0, 1000);
-		// }
-		// if (Key == 3U)
-		// {
-		// 	LED_Control(LED3, LED_HIGH);
-		// 	AT4950_SetSpeed(-1000, -1000);
-		// }
-		// if (Key == 4U)
-		// {
-		// 	LED_Control(LED1, LED_LOW);
-		// 	LED_Control(LED2, LED_LOW);
-		// 	LED_Control(LED3, LED_LOW);
-		// 	AT4950_SetSpeed(0,0);
-		// }
+		if (Key == 1U)
+		{
+			LED_Control(LED1, LED_HIGH);
+			AT4950_SetSpeed(3000, 3000);
+		}
+		if (Key == 2U)
+		{
+			LED_Control(LED2, LED_HIGH);
+			AT4950_SetSpeed(0, 3000);
+		}
+		if (Key == 3U)
+		{
+			LED_Control(LED3, LED_HIGH);
+			AT4950_SetSpeed(-3000, -3000);
+		}
+		if (Key == 4U)
+		{
+			LED_Control(LED1, LED_LOW);
+			LED_Control(LED2, LED_LOW);
+			LED_Control(LED3, LED_LOW);
+			AT4950_SetSpeed(0,0);
+		}
 		/* 串口打印 50ms */
 #if (DEBUG_PRINT_ENABLE == 1U)
 		if (tasks.print_50ms.flag)
 		{
 			tasks.print_50ms.flag = false;
-			usart_printf(USART1, "R:%.2f P:%.2f Y:%.2f\r\n", icmRoll, icmPitch, icmYaw);
-			// GrayADC_PrintRaw(&g_graySensor, USART2);
+			// usart_printf(USART1, "R:%.2f P:%.2f Y:%.2f\r\n", icmRoll, icmPitch, icmYaw);
+			GrayADC_PrintRaw(&g_graySensor, USART3);
 			// usart_printf(USART1, "key: %lu\r\n", Key);
 		}
 #endif
@@ -164,9 +164,11 @@ int main(void)
 		{
 			tasks.oled_100ms.flag = false;
 			
-			OLED_Printf(0, 0, OLED_6X8, "T:%d JY%+4.1f", Task_GetSelect(), JY61P_GetYawFiltered() * 0.01f);
-			OLED_Printf(0, 16, OLED_6X8, "R:%+5.1f P:%+5.1f", icmRoll, icmPitch);
-			OLED_Printf(0, 32, OLED_6X8, "Y:%+5.1f Gz:%+5.0f", icmYaw, icmGz);
+			OLED_Printf(0, 0, OLED_6X8, "T:%d JY%.1f", Task_GetSelect(), JY61P_GetYawFiltered() * 0.01f);
+			OLED_Printf(0, 16, OLED_6X8, "R:%.3f   P:%.3f", icmRoll, icmPitch);
+			OLED_Printf(0, 32, OLED_6X8, "Y:%.3f", icmYaw);
+
+			// OLED_Printf(0, 32, OLED_6X8, "Y:%+5.1f Gz:%+5.0f", icmYaw, icmGz);
 			OLED_Printf(78, 48, OLED_6X8, "%d%d%d%d%d%d%d%d",
 				g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
 				g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],

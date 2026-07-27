@@ -159,3 +159,39 @@ void soft_spi_hal_delay_on(void)
 {
 	s_spiDelayOff = 0U;
 }
+
+/* ══════════════════════════════════════════════════════════
+ * SPI 上下文保存/恢复（ISR 抢占保护）
+ * ══════════════════════════════════════════════════════════ */
+
+void soft_spi_hal_save(soft_spi_context_t *ctx)
+{
+	if (ctx == 0) { return; }
+
+	ctx->csReg    = (void *)s_csReg;
+	ctx->sckReg   = (void *)s_sckReg;
+	ctx->mosiReg  = (void *)s_mosiReg;
+	ctx->misoReg  = (void *)s_misoReg;
+	ctx->csPin    = s_csPin;
+	ctx->sckPin   = s_sckPin;
+	ctx->mosiPin  = s_mosiPin;
+	ctx->misoPin  = s_misoPin;
+	ctx->delayUs  = s_spiDelayUs;
+	ctx->delayOff = s_spiDelayOff;
+}
+
+void soft_spi_hal_restore(const soft_spi_context_t *ctx)
+{
+	if (ctx == 0) { return; }
+
+	s_csReg    = (GPIO_Regs *)ctx->csReg;
+	s_sckReg   = (GPIO_Regs *)ctx->sckReg;
+	s_mosiReg  = (GPIO_Regs *)ctx->mosiReg;
+	s_misoReg  = (GPIO_Regs *)ctx->misoReg;
+	s_csPin    = ctx->csPin;
+	s_sckPin   = ctx->sckPin;
+	s_mosiPin  = ctx->mosiPin;
+	s_misoPin  = ctx->misoPin;
+	s_spiDelayUs  = ctx->delayUs;
+	s_spiDelayOff = ctx->delayOff;
+}

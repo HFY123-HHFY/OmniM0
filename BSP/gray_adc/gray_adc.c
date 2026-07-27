@@ -28,8 +28,8 @@ static const uint16_t s_defaultBlack[8] = GRAY_ADC_BLACK_DEFAULT;
 /*===========================================================================
  * ADC 实例与通道 — 与 G3507_hw_config.h 中的 HW_ADC_MAP 保持一致
  *===========================================================================*/
-#define GRAY_ADC_INST    API_ADC1       /* ADC 外设实例（与 HW_ADC_MAP 一致） */
-#define GRAY_ADC_CH      API_ADC_CH4    /* ADC 通道（与 HW_ADC_MAP 一致，当前 CH4=B25） */
+#define GRAY_ADC_INST    API_ADC1       /* ADC 外设 */
+#define GRAY_ADC_CH      API_ADC_CH0    /* ADC 通道 */
 
 /*===========================================================================
  * 采样参数

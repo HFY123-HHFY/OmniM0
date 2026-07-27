@@ -32,7 +32,7 @@
 ```text
 A_Entry/                程序入口（main.c）
 app/                    应用层（控制逻辑、任务调度、算法）
-BSP/                    板级设备层（LED/KEY/OLED/ICM42688/AT4950/JY61P/GrayADC 等）
+BSP/                    板级设备层（LED/KEY/OLED/ICM42688/A4950/JY61P/GrayADC 等）
 Enroll/                 注册层（板级资源映射与注册）
 API/                    接口层（片内外设抽象 + I2C/SPI 协议层）
 Core/MSPM0G3507/        核心层（G3507 底层实现）
@@ -195,10 +195,10 @@ Buzzer_Light(LED1, 500);
 
 | API | 通道 | 引脚 | 硬件定时器 | CCP | 电源域 | 时钟 | Period | 频率 | 用途 |
 |-----|------|------|-----------|-----|--------|------|--------|------|------|
-| TIM1 | CH1 | PB15 | TIMG7 | CCP0 | PD1 | 80M | 4000 | 20k | AT4950 AIN1 |
-| TIM2 | CH1 | PB7 | TIMG6 | CCP1 | PD1 | 80M | 4000 | 20k | AT4950 AIN2 |
-| TIM3 | CH1 | PB13 | TIMA0 | CCP3 | PD1 | 80M | 4000 | 20k | AT4950 BIN1 |
-| TIM3 | CH2 | PB9 | TIMA0 | CCP1 | PD1 | 80M | 4000 | 20k | AT4950 BIN2 |
+| TIM1 | CH1 | PB15 | TIMG7 | CCP0 | PD1 | 80M | 4000 | 20k | A4950 AIN1 |
+| TIM2 | CH1 | PB7 | TIMG6 | CCP1 | PD1 | 80M | 4000 | 20k | A4950 AIN2 |
+| TIM3 | CH1 | PB13 | TIMA0 | CCP3 | PD1 | 80M | 4000 | 20k | A4950 BIN1 |
+| TIM3 | CH2 | PB9 | TIMA0 | CCP1 | PD1 | 80M | 4000 | 20k | A4950 BIN2 |
 | TIM4 | CH1 | PA28 | TIMA1 | CCP0 | PD1 | 80M | 4000 | 20k | 预留 |
 | TIM4 | CH2 | PA31 | TIMA1 | CCP1 | PD1 | 80M | 4000 | 20k | 预留 |
 | TIM5 | CH1 | PA29 | TIMG8 | CCP0 | PD0 | 40M | 2000 | 20k | 预留 |
@@ -220,7 +220,7 @@ Buzzer_Light(LED1, 500);
 | OLED | BSP/OLED/ | SPI（软） | 已实现 |
 | MPU6050 | BSP/MPU6050/ | I2C + EXTI（DMP） | 已实现（预留） |
 | **ICM42688** | BSP/ICM42688/ | SPI2（软, 5MHz） | **已实现（ISR 驱动）** |
-| **AT4950** | BSP/AT4950/ | 4 路独立 PWM（快衰减） | **已实现** |
+| **A4950** | BSP/A4950/ | 4 路独立 PWM（快衰减） | **已实现** |
 | **GrayADC** | BSP/gray_adc/ | ADC + GPIO（74HC4051） | 已实现 |
 | **JY61P** | BSP/JY61P/ | UART（USART2, 115200 bps） | 已实现 |
 | TB6612 | BSP/TB6612/ | PWM + GPIO | 底层保留，注册层已删除 |
@@ -254,16 +254,16 @@ Buzzer_Light(LED1, 500);
 - `ICM42688_ReadSensor` 含 atan2f/sqrtf（M0+ 软件浮点 ~100μs），总耗时 ~120μs
 - 读数据接口对标 MPU6050 风格：`GetAttitude(&roll, &pitch, &yaw)` / `GetGyroscope()` / `GetAccelerometer()`
 
-### 6.4 AT4950 — 双路 H 桥电机驱动（快衰减 + 单极性 PWM）
+### 6.4 A4950 — 双路 H 桥电机驱动（快衰减 + 单极性 PWM）
 
 - 控制逻辑：
   - 正转：IN1 = PWM, IN2 = 0
   - 反转：IN1 = 0, IN2 = PWM
   - 刹车：IN1 = 1, IN2 = 1（100% 占空比短路制动）
 - 4 路独立 PWM（每个 IN 脚一个 PWM 通道），全 PD1 @20kHz, period=4000
-- 接口：`AT4950_SetSpeed(speedA, speedB)` — 正负表示方向，绝对值 = 占空比
+- 接口：`A4950_SetSpeed(speedA, speedB)` — 正负表示方向，绝对值 = 占空比
 - 安全特性：
-  - 上电初始刹车（`AT4950_Init`）
+  - 上电初始刹车（`A4950_Init`）
   - 方向反转自动插入 2ms 刹车死区，防止 H 桥直通
   - 同方向调速直接改占空比，无死区
 - TB6612 底层代码保留，注册层已删除
@@ -318,7 +318,7 @@ PID（Q16.16 整数）：
 | 5ms | JY61P_Task + **ICM42688_ReadSensor** + GrayADC_Task + 出入线检测 + Direction_Control | ISR |
 | 20ms | Encoder Snapshot + GetSpeed + Task_Run | ISR |
 | 50ms | usart_printf（标志位驱动） | 主循环 |
-| 100ms | OLED 刷新（标志位驱动） + AT4950 测试（500ms 切换） | 主循环 |
+| 100ms | OLED 刷新（标志位驱动） + A4950 测试（500ms 切换） | 主循环 |
 
 **TaskManager** 仅管理主循环低频任务（`buzzer_5ms` / `key_20ms` / `print_50ms` / `oled_100ms`），在 ISR 中计数+置标志位，主循环轮询消费。
 
@@ -400,4 +400,4 @@ cmake --build --preset Debug
 7. SYSTEM/BusRate.h
 8. SYSTEM/IrqPriority.h
 9. BSP/ICM42688/ICM42688.h
-10. BSP/AT4950/AT4950.h
+10. BSP/A4950/A4950.h

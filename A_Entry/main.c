@@ -88,8 +88,8 @@ int main(void)
 	uint8_t icmOk = ICM42688_Init();	/* ICM42688 陀螺仪（SPI2, 5MHz） */
 	usart_printf(USART1, "ICM42688=%d\r\n", icmOk);
 	JY61P_Init();							/* JY61P 陀螺仪数据结构初始化 */
-	// TB6612_Init(); 						/* TB6612 电机驱动初始化（已换用 AT4950） */
-	API_Motor_Init();						/* 电机驱动上电刹车（当前=AT4950） */
+	// TB6612_Init(); 						/* TB6612 电机驱动初始化（已换用 A4950） */
+	API_Motor_Init();						/* 电机驱动上电刹车（当前=A4950） */
 	API_Encoder_Init(API_ENCODER_1); 		/* 编码器 1 初始化 */
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */

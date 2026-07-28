@@ -52,7 +52,7 @@ void PID_Control_Init(void)
 void YawPid_Init(void)
 {
     PID_Init(&yaw_pid);
-    PID_Init_WithLimit(&yaw_pid, 500, API_MOTOR_MAX_DUTY);    /* I_out ±500, Out_max=4000 */
+    PID_Init_WithLimit(&yaw_pid, 4000, API_MOTOR_MAX_DUTY);    /* I_out ±500, Out_max=4000 */
     PID_SetSampleTime(&yaw_pid, 20);             /* dt = 20ms，和速度环同频     */
     PID_SetDeadband(&yaw_pid, 100);              /* ±1.0° 死区（100 cdeg）      */
 }

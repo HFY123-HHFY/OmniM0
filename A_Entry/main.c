@@ -97,9 +97,10 @@ int main(void)
 	API_TIM_Init(API_TIM1, 1U); /* TIMG0 1ms ISR 启动 —— 所有硬件已就绪 */
 	Buzzer_Beep(200);           /* 蜂鸣器短鸣 200ms，非阻塞（依赖 g_sys_tick_ms） */
 
-	PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f);
+	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f);
 	// Set_PID(&direction_pid,  2.0f, 0.5f, 0.1f);      /* 灰度方向环：kp=2.0 ki=0.5 kd=0.1 */
-	YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f);               /* 偏航角环：kp=2.0 ki=0.3 kd=0 */
+	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f);               /* 偏航角环：kp=2.0 ki=0.3 kd=0 */
+	YawPid_Set(2.0f, 1.2f, 0.0f, 45.0f);               /* 偏航角环：kp=2.0 ki=0.3 kd=0 */
 
 	while (1)
 	{

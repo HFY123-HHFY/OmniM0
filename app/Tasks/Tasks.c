@@ -156,7 +156,18 @@ void Task_1(void)
     static uint8_t         s_state    = STATE_FOLLOW;
     static NonBlockDelay_t s_delay;
     static uint8_t         s_cooldown = 0U;
+    static uint8_t         s_last_gen = 0U;
     uint8_t turn_trigger = 0U;
+
+    /* ── 首次启动 / KEY1 重新启动时，设置本任务的 PID 参数 ── */
+    if (s_last_gen != s_gen)
+    {
+        s_last_gen = s_gen;
+        /* 速度环：kp=20.0, ki=170.0, kd=0, 目标=20（编码器单位）      */
+        PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f);
+        /* 灰度方向环：kp=2.0, ki=0.5, kd=0.1                           */
+        Set_PID(&direction_pid, 0.5f, 0.0f, 0.01f);
+    }
 
     /* ── 冷却计数递减（每次 20ms）── */
     if (s_cooldown > 0U) { s_cooldown--; }

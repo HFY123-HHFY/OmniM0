@@ -69,7 +69,7 @@ void Enroll_KEY_Register(void);
 void Enroll_OLED_Register(void);
 
 /* TB6612 电机驱动注册：登记方向脚与PWM通道。 */
-// void Enroll_TB6612_Register(void);
+void Enroll_TB6612_Register(void);
 
 /* 编码器资源注册：登记板级编码器资源表。 */
 void Enroll_Encoder_Register(void);

@@ -19,7 +19,7 @@
  * ══════════════════════════════════════════════════════════════════════ */
 TaskManager tasks = {
     .buzzer_5ms = { .period = 5   },   /* 蜂鸣器/LED 调度    */
-    .key_20ms   = { .period = 20  },   /* 按键轮询           */
+    .key_20ms   = { .period = 10  },   /* 按键轮询           */
     .print_50ms = { .period = 50  },   /* 串口：调试打印     */
     .oled_100ms = { .period = 100 },   /* 显示：OLED 刷新    */
 };
@@ -76,9 +76,11 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
 		G3507_Encoder_SnapshotAll();
 		Encoder1_Speed =  API_Encoder_GetFilteredSpeed(API_ENCODER_1);
 		Encoder2_Speed = -API_Encoder_GetFilteredSpeed(API_ENCODER_2);
-        // PID_Speed_Control();
-        YawTest_Control();  /* 偏航角环PID计算输出 */
-        // Task_Run();
+        // PID_Speed_Control(); /* 速度环 */ 
+        // YawTest_Control();  /* 偏航角环PID计算输出 */
+        // Direction_Test_Control(); /* 灰度环PID计算输出 */
+        // LineFollow_Output(); /* 速度环 + 灰度环融合输出 */
+        Task_Run();
 	}
 
     /* ── 4. TaskManager：任务标志位（主循环消费）── */

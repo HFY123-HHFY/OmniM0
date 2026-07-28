@@ -21,7 +21,7 @@ extern "C" {
 #define MOTOR_DRIVER_TB6612  2
 
 #ifndef MOTOR_DRIVER
-#define MOTOR_DRIVER  MOTOR_DRIVER_A4950
+#define MOTOR_DRIVER  MOTOR_DRIVER_TB6612
 #endif
 
 /* ── 当前驱动对应的占空比上限（统一宏，app 层无需知道底层驱动）── */

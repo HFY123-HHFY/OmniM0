@@ -25,7 +25,7 @@
 #include "tim.h"
 #include "OLED.h"
 #include "exti.h"
-// #include "TB6612.h"
+#include "TB6612.h"
 #include "Encoder.h"
 #include "gray_adc.h"
 

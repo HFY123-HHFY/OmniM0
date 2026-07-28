@@ -36,7 +36,7 @@
 // #include "jy61p.h"
 
 /* ── 调试开关 ── */
-#define DEBUG_PRINT_ENABLE  0U   /* 开启/关闭串口 printf 调试输出 */
+#define DEBUG_PRINT_ENABLE  1U   /* 开启/关闭串口 printf 调试输出 */
 #define DEBUG_OLED_ENABLE   1U   /* 开启/关闭 OLED 显示            */
 
 int main(void)
@@ -53,7 +53,7 @@ int main(void)
 	Enroll_LED_Register();					/* LED 资源注册 */
 	Enroll_KEY_Register();					/* KEY 资源注册 */
 	Enroll_OLED_Register();					/* OLED SPI 控制脚注册 */
-	// Enroll_TB6612_Register();			/* TB6612 资源注册 */
+	Enroll_TB6612_Register();				/* TB6612 资源注册 */
 	Enroll_Encoder_Register();				/* 编码器 资源注册 */
 	Enroll_GrayADC_Register();				/* GrayADC 灰度传感器 资源注册 */
 
@@ -68,7 +68,7 @@ int main(void)
 	API_USART_Init(API_USART4, 115200U); // 初始化 USART4-预留串口
 	API_PWM_Init(API_PWM_TIM1, 4000U - 1U, 1U - 1U); /* TIMG7@PD1 电机A相 */
 	API_PWM_Init(API_PWM_TIM2, 4000U - 1U, 1U - 1U); /* TIMG6@PD1 电机A相 */
-	API_PWM_Init(API_PWM_TIM3, 4000U - 1U, 1U - 1U); /* TIMA0@PD1 电机B相 */
+	// API_PWM_Init(API_PWM_TIM3, 4000U - 1U, 1U - 1U); /* TIMA0@PD1 电机B相 */
 	// API_PWM_Init(API_PWM_TIM4, 4000U - 1U, 1U - 1U); /* TIMA1@PD1 预留PWM */
 	// API_PWM_Init(API_PWM_TIM5, 2000U - 1U, 1U - 1U); /* TIMG8@PD0 预留PWM(非必要不启动) */
 	API_ADC_Init(API_ADC1); 				// 初始化 ADC1
@@ -97,10 +97,9 @@ int main(void)
 	API_TIM_Init(API_TIM1, 1U); /* TIMG0 1ms ISR 启动 —— 所有硬件已就绪 */
 	Buzzer_Beep(200);           /* 蜂鸣器短鸣 200ms，非阻塞（依赖 g_sys_tick_ms） */
 
-	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f);
-	// Set_PID(&direction_pid,  2.0f, 0.5f, 0.1f);      /* 灰度方向环：kp=2.0 ki=0.5 kd=0.1 */
+	PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f);
+	Set_PID(&direction_pid,  0.50f, 0.0f, 0.010f);      /* 灰度方向环：kp=2.0 ki=0.5 kd=0.1 */
 	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f);               /* 偏航角环：kp=2.0 ki=0.3 kd=0 */
-	YawPid_Set(2.0f, 1.2f, 0.0f, 45.0f);               /* 偏航角环：kp=2.0 ki=0.3 kd=0 */
 
 	while (1)
 	{
@@ -124,7 +123,7 @@ int main(void)
 		{
 			tasks.print_50ms.flag = false;
 			// usart_printf(USART1, "R:%.2f P:%.2f Y:%.2f\r\n", icmRoll, icmPitch, icmYaw);
-			GrayADC_PrintRaw(&g_graySensor, USART3);
+			// GrayADC_PrintRaw(&g_graySensor, USART3);
 			// usart_printf(USART1, "key: %lu\r\n", Key);
 		}
 #endif
@@ -135,11 +134,11 @@ int main(void)
 		{
 			tasks.oled_100ms.flag = false;
 			OLED_Clear();
-			// OLED_Printf(0, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-			// g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
-			// g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
-			// g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
-			// g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]);
+			OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
+			g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
+			g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
+			g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
+			g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]);
 			OLED_Printf(0,  0, OLED_6X8, "T%d", s_task_select);
 			OLED_Printf(32, 0, OLED_6X8, "Y%+d", yaw_pid.output);
 			// OLED_Printf(64, 0, OLED_6X8, "D%+d", direction_pid.output);

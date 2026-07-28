@@ -142,7 +142,7 @@ void PID_Init(PID_TypeDef* pid)
  * @param Integral_max  I_out 最大贡献值（自然单位，和 output 同量纲）
  *                      例：方向环 I 项最多贡献 ±20 → 传入 20
  *                          速度环 I 项最多贡献 ±200 → 传入 200
- * @param Out_max       输出上限（自然单位，如 TB6612 占空比 400）
+ * @param Out_max       输出上限（自然单位，如 TB6612 占空比 4000）
  *
  * 注意：Integral_max_q16 的精确值在 Set_PID 调用后才会被计算。
  *       在此之前使用安全上限。
@@ -521,10 +521,10 @@ void PID_EncoderSpeed_Init(PID_EncoderSpeed_t* speed)
     PID_Init(&speed->left);
     PID_Init(&speed->right);
 
-    /* 左右轮独立 PID，Out_max = TB6612_MAX_DUTY(2000) */
-    /* I_out 上限设为 1750（接近 Out_max，允许 I 项充分贡献） */
-    PID_Init_WithLimit(&speed->left,  1750, 2000);
-    PID_Init_WithLimit(&speed->right, 1750, 2000);
+    /* 左右轮独立 PID，Out_max = API_MOTOR_MAX_DUTY(4000) */
+    /* I_out 上限设为 3500（87.5% Out_max，允许 I 项充分贡献） */
+    PID_Init_WithLimit(&speed->left,  3500, 4000);
+    PID_Init_WithLimit(&speed->right, 3500, 4000);
 }
 
 void PID_EncoderSpeed_Set(PID_EncoderSpeed_t* speed,

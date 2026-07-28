@@ -179,7 +179,7 @@ int32_t PID_Cascade_Calc(PID_Cascade_t* cascade,
 /* ── 编码器速度环 ── */
 
 void PID_EncoderSpeed_Init(PID_EncoderSpeed_t* speed);
-/* 左右轮独立 PID 初始化，Out_max=400（TB6612），I_max 默认很大       */
+/* 左右轮独立 PID 初始化，Out_max=4000（AT4950），I_max 默认很大       */
 
 void PID_EncoderSpeed_Set(PID_EncoderSpeed_t* speed,
                           float kp, float ki, float kd,

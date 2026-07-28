@@ -37,7 +37,7 @@ void PID_Control_Init(void)
 
     /* ── 方向环结构 ── */
     PID_Init(&direction_pid);
-    PID_Init_WithLimit(&direction_pid, 100, 3000);
+    PID_Init_WithLimit(&direction_pid, 500, API_MOTOR_MAX_DUTY);
     PID_SetSampleTime(&direction_pid, 5);
     PID_SetDeadband(&direction_pid, 60);
     PID_SetIntegralSeparation(&direction_pid, 3000);
@@ -52,7 +52,7 @@ void PID_Control_Init(void)
 void YawPid_Init(void)
 {
     PID_Init(&yaw_pid);
-    PID_Init_WithLimit(&yaw_pid, 100, 3000);    /* I_out ±100, Out_max ±3000   */
+    PID_Init_WithLimit(&yaw_pid, 500, API_MOTOR_MAX_DUTY);    /* I_out ±500, Out_max=4000 */
     PID_SetSampleTime(&yaw_pid, 20);             /* dt = 20ms，和速度环同频     */
     PID_SetDeadband(&yaw_pid, 100);              /* ±1.0° 死区（100 cdeg）      */
 }
@@ -61,14 +61,14 @@ void YawPid_Init(void)
  * YawPid_InitStraight — 直走专用偏航角 PID。
  *
  * 与默认版的区别：
- *   - 输出上限从 3000 降到 600（不给速度环造成剧烈差速扰动）
+ *   - 输出上限从 4000 降到 1200（不给速度环造成剧烈差速扰动）
  *   - 死区从 1.5° 放宽到 2.0°，避免微小角度波动反复纠偏
- *   - 积分限从 ±100 降到 ±50（防积分超调引发震荡）
+ *   - 积分限从 ±500 降到 ±150（防积分超调引发震荡）
  */
 void YawPid_InitStraight(void)
 {
     PID_Init(&yaw_pid);
-    PID_Init_WithLimit(&yaw_pid, 50, 600);       /* I_out ±50, Out_max ±600    */
+    PID_Init_WithLimit(&yaw_pid, 150, 1200);       /* I_out ±150, Out_max ±1200    */
     PID_SetSampleTime(&yaw_pid, 20);              /* dt = 20ms                  */
     PID_SetDeadband(&yaw_pid, 200);               /* ±2.0° 死区（200 cdeg）     */
 }
@@ -109,7 +109,7 @@ void YawPid_Set(float kp, float ki, float kd, float target_deg)
  * YawPid_Calc — 偏航角 PID 计算（20ms ISR）。
  *
  * @param yaw_degrees  当前偏航角（度），来自 g_icm42688.yaw
- * @return             steer 值（±3000），正值=右转
+ * @return             steer 值（±4000），正值=右转
  *
  * 内部自动：yaw → cdeg → ±180° wrap → 纯整数 PID_Calc。
  */

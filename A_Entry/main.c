@@ -97,9 +97,9 @@ int main(void)
 	API_TIM_Init(API_TIM1, 1U); /* TIMG0 1ms ISR 启动 —— 所有硬件已就绪 */
 	Buzzer_Beep(200);           /* 蜂鸣器短鸣 200ms，非阻塞（依赖 g_sys_tick_ms） */
 
-	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 150.0f, 0.0f, 15.0f);
-	// Set_PID(&direction_pid,  1.0f, 0.002f, 0.01f);      /* 灰度方向环参数    */
-	// YawPid_Set(0.2f, 0.00f, 0.0f, -45.0f);  /* 旋转专用 PID + A 点目标 */
+	PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f);
+	// Set_PID(&direction_pid,  2.0f, 0.5f, 0.1f);      /* 灰度方向环：kp=2.0 ki=0.5 kd=0.1 */
+	YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f);               /* 偏航角环：kp=2.0 ki=0.3 kd=0 */
 
 	while (1)
 	{
@@ -115,29 +115,6 @@ int main(void)
 		{
 			tasks.key_20ms.flag = false;
 			key_Get();
-		}
-
-		if (Key == 1U)
-		{
-			LED_Control(LED1, LED_HIGH);
-			API_Motor_SetSpeed(2500, 2500);
-		}
-		if (Key == 2U)
-		{
-			LED_Control(LED2, LED_HIGH);
-			API_Motor_SetSpeed(0, 2800);
-		}
-		if (Key == 3U)
-		{
-			LED_Control(LED3, LED_HIGH);
-			API_Motor_SetSpeed(-2500, -2500);
-		}
-		if (Key == 4U)
-		{
-			LED_Control(LED1, LED_LOW);
-			LED_Control(LED2, LED_LOW);
-			LED_Control(LED3, LED_LOW);
-			API_Motor_SetSpeed(0,0);
 		}
 
 /* 串口打印 50ms */
@@ -162,9 +139,12 @@ int main(void)
 			// g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
 			// g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
 			// g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]);
-			OLED_Printf(0, 16, OLED_6X8, "R:%.2f P:%.2f", g_icm42688.roll, g_icm42688.pitch);
-			OLED_Printf(0, 32, OLED_6X8, "Y:%.2f", g_icm42688.yaw);
-			OLED_Printf(0, 48, OLED_6X8, "L: %d, R: %d", Encoder1_Speed, Encoder2_Speed);
+			OLED_Printf(0,  0, OLED_6X8, "T%d", s_task_select);
+			OLED_Printf(32, 0, OLED_6X8, "Y%+d", yaw_pid.output);
+			// OLED_Printf(64, 0, OLED_6X8, "D%+d", direction_pid.output);
+			OLED_Printf(0, 16, OLED_6X8, "R%+.1f P%+.1f", g_icm42688.roll, g_icm42688.pitch);
+			OLED_Printf(0, 32, OLED_6X8, "Y%+.1f", g_icm42688.yaw);
+			OLED_Printf(0, 48, OLED_6X8, "L%+d R%+d", Encoder1_Speed, Encoder2_Speed);
 			OLED_Update();
 		}
 #endif

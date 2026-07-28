@@ -74,9 +74,10 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
         tick_20ms = 0U;
 
 		G3507_Encoder_SnapshotAll();
-		Encoder1_Speed =  API_Encoder_GetSpeed(API_ENCODER_1);
-		Encoder2_Speed = -API_Encoder_GetSpeed(API_ENCODER_2);
-        // PID_Speed_Control();
+		Encoder1_Speed =  API_Encoder_GetFilteredSpeed(API_ENCODER_1);
+		Encoder2_Speed = -API_Encoder_GetFilteredSpeed(API_ENCODER_2);
+        PID_Speed_Control();
+        // YawTest_Control();  /* 偏航角环PID计算输出 */
         // Task_Run();
 	}
 

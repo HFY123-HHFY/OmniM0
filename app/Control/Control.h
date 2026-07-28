@@ -29,8 +29,8 @@ extern PID_TypeDef yaw_pid;             /* 偏航角位置环 PID */
 
 /* PID 初始化（速度环 + 方向环 + 偏航角环） */
 void PID_Control_Init(void);
-void YawPid_Init(void);                 /* 偏航角 PID 默认初始化（Out_max=3000）  */
-void YawPid_InitStraight(void);         /* 直走专用：小死区 + 低输出上限 ±600    */
+void YawPid_Init(void);                 /* 偏航角 PID 默认初始化（Out_max=API_MOTOR_MAX_DUTY）  */
+void YawPid_InitStraight(void);         /* 直走专用：小死区 + 低输出上限 ±1200    */
 void YawPid_Set(float kp, float ki, float kd, float target_deg);  /* 四合一：PID 参数 + 目标角度 */
 void YawPid_SetTarget(float degrees);   /* 单独设置目标偏航角（度）             */
 int32_t YawPid_Calc(float yaw_degrees); /* 计算偏航角 PID 输出（度，直接传 jy->yaw）*/

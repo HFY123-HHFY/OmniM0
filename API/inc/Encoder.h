@@ -21,9 +21,33 @@ typedef enum
 	API_ENCODER_2 = 1U
 } API_Encoder_Id_t;
 
-/* 编码器速度全局变量 */
+/* 编码器速度全局变量（EMA 滤波后，供 PID 速度环使用） */
 extern int16_t Encoder1_Speed;
 extern int16_t Encoder2_Speed;
+
+/* ══════════════════════════════════════════════════════════════════════
+ * EMA 低通滤波（消除编码器脉冲抖动 / 齿槽转矩噪声）
+ *
+ * 公式：filtered += (raw - filtered) * alpha / 65536
+ * alpha 越小 → 滤波越强，响应越慢；alpha 越大 → 越接近原始值
+ *
+ * 推荐值（20ms 采样周期）：
+ *   - 0.3 (19661)  ← 默认，适合大多数电机，~100ms 阶跃响应
+ *   - 0.5 (32768)  ← 轻滤波，噪声敏感场景慎用
+ *   - 0.7 (45875)  ← 极轻，接近原始值
+ *   - 0      (0)   ← 无滤波，等价于 GetSpeed
+ * ══════════════════════════════════════════════════════════════════════ */
+
+#define ENCODER_FILTER_ALPHA_Q16  19661U   /* ≈0.3，默认滤波强度 */
+
+/* 配置编码器 EMA 滤波系数（Q0.16，0-65535）。
+ * 应在 Init 之后、周期读取之前调用一次。 */
+void API_Encoder_SetFilterAlpha(API_Encoder_Id_t id, uint16_t alpha_q16);
+
+/* 读取滤波后的编码器速度。
+ * 每次调用内部执行一次 EMA 更新（基于当前 stable 快照值），
+ * 调用频率应与 SnapshotAll 一致（20ms），否则滤波时间常数会偏移。 */
+int16_t API_Encoder_GetFilteredSpeed(API_Encoder_Id_t id);
 
 /*
  * 定时器输入捕获通道常量

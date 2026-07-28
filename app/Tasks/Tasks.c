@@ -1,8 +1,9 @@
 #include "Tasks.h"
-#include "Control/Control.h"       /* direction_pid, speed_loop, yaw_pid */
-#include "PID/PID.h"               /* PID_Reset */
-#include "API_Motor.h"             /* API_Motor_SetSpeed */
-#include "KEY.h"                   /* Key, s_task_select */
+#include "Control/Control.h"             /* direction_pid, speed_loop, yaw_pid, g_graySensor */
+#include "PID/PID.h"                     /* PID_Reset */
+#include "API_Motor.h"                   /* API_Motor_SetSpeed */
+#include "KEY.h"                         /* Key, s_task_select */
+#include "Control_Task/Control_Task.h"   /* NonBlockDelay_t */
 
 /* ══════════════════════════════════════════════════════════════════════
  * 任务链调度框架
@@ -110,9 +111,140 @@ void Task_Run(void)
  * 任务实现
  * ══════════════════════════════════════════════════════════════════════ */
 
+/* ══════════════════════════════════════════════════════════════════════
+ * Task_1 — 灰度循迹环 + 速度环控制小车跑正方形黑线套圈
+ *
+ * 直角转弯逻辑：
+ *   顺时针 (CW)  — 右边 3 路 sensor[5][6][7] 同时见黑 → 延时 → 右转
+ *   逆时针 (CCW) — 左边 3 路 sensor[0][1][2] 同时见黑 → 延时 → 左转
+ *
+ * 转弯流程：
+ *   检测路口（3 路同时见黑 digital_bits == 0）
+ *     → TURN_DELAY_MS 继续循迹直走（让传感器越过黑线交叉区）
+ *     → 关闭 PID（速度环 + 灰度方向环），防止积分累积
+ *     → 开环差速原地转弯，持续 TURN_PIVOT_MS
+ *     → 复位 PID + 冷却期，回到正常循迹
+ * ══════════════════════════════════════════════════════════════════════ */
 void Task_1(void)
 {
+    /* ── 转弯参数（实地调试时修改以下 static const 值即可，无需动状态机）── */
 
+    /* 检测到路口后继续循迹直走的时间（ms），让传感器越过黑线交叉区   */
+    static const uint16_t TURN_DELAY_MS   = 0U;
+    /* 开环原地转弯持续时间（ms），控制转弯角度（~90°），值越大转越多 */
+    static const uint16_t TURN_PIVOT_MS   = 400U;
+    /* 顺时针右转 — 左轮正转 + 右轮反转 → 车体顺时针原地 pivot       */
+    static const int16_t  CW_SPEED_LEFT   = 1000;
+    static const int16_t  CW_SPEED_RIGHT  = 2500;
+    /* 逆时针左转 — 左轮反转 + 右轮正转 → 车体逆时针原地 pivot       */
+    static const int16_t  CCW_SPEED_LEFT  = 2500;
+    static const int16_t  CCW_SPEED_RIGHT = 1000;
+    /* 转弯完成后冷却周期数（×20ms），防止同一路口被重复触发           */
+    static const uint8_t  TURN_COOLDOWN   = 15U;
+
+    /* ── 套圈方向（改 DIR_CW 顺时针/ DIR_CCW 逆时针切换）── */
+    enum { DIR_CW = 1U, DIR_CCW = 2U };
+    static const uint8_t DIR = DIR_CCW;
+
+    /* ── 转弯状态机 ── */
+    enum {
+        STATE_FOLLOW = 0U,       /* 正常循迹（速度环 + 灰度方向环 PID 全开） */
+        STATE_TURN_DELAY,        /* 路口直走延时（PID 仍开，让传感器过线）   */
+        STATE_TURN_PIVOT,        /* 开环原地转弯（PID 关闭，差速 pivot）     */
+    };
+
+    static uint8_t         s_state    = STATE_FOLLOW;
+    static NonBlockDelay_t s_delay;
+    static uint8_t         s_cooldown = 0U;
+    uint8_t turn_trigger = 0U;
+
+    /* ── 冷却计数递减（每次 20ms）── */
+    if (s_cooldown > 0U) { s_cooldown--; }
+
+    /* ══════════════════════════════════════════════════════════════════
+     * 路口检测：3 路灰度灯管同时扫描到黑线（digital_bits[i] == 0）。
+     *
+     * 顺时针套圈 → 右边 3 路（sensor[5][6][7]）同时见黑 = 右转路口
+     * 逆时针套圈 → 左边 3 路（sensor[0][1][2]）同时见黑 = 左转路口
+     *
+     * 仅对应方向 3 路全部见黑才触发，单路或两路见黑不触发，
+     * 天然抗噪（直线上通常只有 1-2 路见黑）。
+     * ══════════════════════════════════════════════════════════════════ */
+    if (DIR == DIR_CW)
+    {
+        if (g_graySensor.digital_bits[5] == 0U &&
+            g_graySensor.digital_bits[6] == 0U &&
+            g_graySensor.digital_bits[7] == 0U)
+        {
+            turn_trigger = 1U;
+        }
+    }
+    else
+    {
+        if (g_graySensor.digital_bits[0] == 0U &&
+            g_graySensor.digital_bits[1] == 0U &&
+            g_graySensor.digital_bits[2] == 0U)
+        {
+            turn_trigger = 1U;
+        }
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+     * 状态机
+     * ══════════════════════════════════════════════════════════════════ */
+    switch (s_state)
+    {
+    /* ── 正常循迹：速度环 + 灰度方向环融合输出 ── */
+    case STATE_FOLLOW:
+        LineFollow_Output();
+        if (turn_trigger != 0U && s_cooldown == 0U)
+        {
+            s_state = STATE_TURN_DELAY;
+            NonBlockDelay_Start(&s_delay, TURN_DELAY_MS);
+        }
+        break;
+
+    /* ── 路口直走延时：继续循迹，让传感器物理越过黑线交叉区 ── */
+    case STATE_TURN_DELAY:
+        LineFollow_Output();
+        if (NonBlockDelay_IsDone(&s_delay))
+        {
+            /* 延时结束，关闭 PID 准备转弯 */
+            PID_Reset(&direction_pid);
+            PID_Reset(&speed_loop.left);
+            PID_Reset(&speed_loop.right);
+            s_state = STATE_TURN_PIVOT;
+            NonBlockDelay_Start(&s_delay, TURN_PIVOT_MS);
+        }
+        break;
+
+    /* ── 开环原地转弯：差速 pivot，PID 关闭 ── */
+    case STATE_TURN_PIVOT:
+        if (DIR == DIR_CW)
+        {
+            /* 顺时针右转：左轮前进 + 右轮后退 → 车体顺时针原地 pivot */
+            API_Motor_SetSpeed(CW_SPEED_LEFT, CW_SPEED_RIGHT);
+        }
+        else
+        {
+            /* 逆时针左转：左轮后退 + 右轮前进 → 车体逆时针原地 pivot */
+            API_Motor_SetSpeed(CCW_SPEED_LEFT, CCW_SPEED_RIGHT);
+        }
+        if (NonBlockDelay_IsDone(&s_delay))
+        {
+            /* 转弯结束：复位 PID + 启动冷却，防同一路口重复触发 */
+            PID_Reset(&direction_pid);
+            PID_Reset(&speed_loop.left);
+            PID_Reset(&speed_loop.right);
+            s_state    = STATE_FOLLOW;
+            s_cooldown = TURN_COOLDOWN;
+        }
+        break;
+
+    default:
+        s_state = STATE_FOLLOW;
+        break;
+    }
 }
 
 void Task_2(void)

@@ -132,13 +132,13 @@ void Task_1(void)
     /* 检测到路口后继续循迹直走的时间（ms），让传感器越过黑线交叉区   */
     static const uint16_t TURN_DELAY_MS   = 0U;
     /* 开环原地转弯持续时间（ms），控制转弯角度（~90°），值越大转越多 */
-    static const uint16_t TURN_PIVOT_MS   = 400U;
+    static const uint16_t TURN_PIVOT_MS   = 420U;
     /* 顺时针右转 — 左轮正转 + 右轮反转 → 车体顺时针原地 pivot       */
     static const int16_t  CW_SPEED_LEFT   = 1000;
     static const int16_t  CW_SPEED_RIGHT  = 2500;
     /* 逆时针左转 — 左轮反转 + 右轮正转 → 车体逆时针原地 pivot       */
-    static const int16_t  CCW_SPEED_LEFT  = 2500;
-    static const int16_t  CCW_SPEED_RIGHT = 1000;
+    static const int16_t  CCW_SPEED_LEFT  = 2800;
+    static const int16_t  CCW_SPEED_RIGHT = 800;
     /* 转弯完成后冷却周期数（×20ms），防止同一路口被重复触发           */
     static const uint8_t  TURN_COOLDOWN   = 15U;
 
@@ -247,9 +247,35 @@ void Task_1(void)
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+ * Task_2 — 速度环 + ICM42688 偏航角环修正，控制小车走直线
+ *
+ * 原理：
+ *   速度环（编码器反馈）维持左右轮目标速度一致，
+ *   偏航角环（ICM42688 yaw 反馈）补偿轮径差异/地面不平引起的偏航，
+ *   两环融合后 → API_Motor_SetSpeed 输出。
+ *
+ * 偏航角目标 = 0°（直走），小车自动纠偏保持直线。
+ * 调用频率：TIMG0 ISR 20ms（由 Task_Run 分发）。
+ *
+ * 核心就是调用 Drive_YawSpeed()，初始化在首次/重启时完成一次即可。
+ * ══════════════════════════════════════════════════════════════════════ */
 void Task_2(void)
 {
+    static uint8_t s_last_gen = 0U;
 
+    /* ── 首次启动 / KEY1 重新启动时，设置 PID 参数 ── */
+    if (s_last_gen != s_gen)
+    {
+        s_last_gen = s_gen;
+        /* 速度环：kp=20.0, ki=170.0, kd=0, 目标=20（编码器单位）  */
+        PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 25.0f);
+        /* 偏航角环：kp=2.0, ki=0.3, kd=0, 目标=0°（走直线）      */
+        YawPid_Set(2.2f, 0.3f, 0.0f, 0.0f);
+    }
+
+    /* 速度环 + 偏航角环融合输出 */
+    Drive_YawSpeed();
 }
 
 void Task_3(void)

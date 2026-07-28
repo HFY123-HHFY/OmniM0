@@ -143,7 +143,7 @@ int main(void)
 			OLED_Printf(32, 0, OLED_6X8, "Y%+d", yaw_pid.output);
 			// OLED_Printf(64, 0, OLED_6X8, "D%+d", direction_pid.output);
 			OLED_Printf(0, 16, OLED_6X8, "R%+.1f P%+.1f", g_icm42688.roll, g_icm42688.pitch);
-			OLED_Printf(0, 32, OLED_6X8, "Y%+.1f", g_icm42688.yaw);
+			OLED_Printf(0, 32, OLED_6X8, "Y%+.3f", g_icm42688.yaw);
 			OLED_Printf(0, 48, OLED_6X8, "L%+d R%+d", Encoder1_Speed, Encoder2_Speed);
 			OLED_Update();
 		}

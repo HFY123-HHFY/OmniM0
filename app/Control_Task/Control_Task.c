@@ -11,6 +11,7 @@
 #include "API_Motor.h"
 #include "ICM42688.h"
 #include "IR_Line.h"
+#include "StepMotor.h"
 
 /* ══════════════════════════════════════════════════════════════════════
  * 全局任务管理器实例（仅管理主循环执行的低频任务）
@@ -130,6 +131,12 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
                 {
                     USART_CamCapture();
                 }
+            }
+
+            /* 步进电机应答 → 环形缓冲（阻塞命令从环缓取数） */
+            if (id == API_USART3)
+            {
+                StepMotor_RxPush((uint8_t)data);
             }
 
             /* 红外循迹模块数据包解析 */

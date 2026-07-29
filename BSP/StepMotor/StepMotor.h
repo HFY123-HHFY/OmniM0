@@ -138,6 +138,21 @@ int8_t StepMotor_SetZero(uint8_t saveToFlash);
  */
 int8_t StepMotor_GoHome(uint32_t timeoutMs);
 
+/*===========================================================================
+ * ⑥ ISR 接口（USART3 中断回调中使用）
+ *===========================================================================*/
+
+/*
+ * USART3 RX 中断 → 环形缓冲入队（ISR 上半部，<1µs）。
+ *
+ * 由 Control_Task_USART_Callback 调用：
+ *   if (id == API_USART3) { StepMotor_RxPush((uint8_t)data); }
+ *
+ * 阻塞命令（Enable/GoHome/GetAngle 等）从环形缓冲轮询取数。
+ * 非阻塞命令（SetAngle/MoveBy/Stop）不接收应答。
+ */
+void StepMotor_RxPush(uint8_t data);
+
 #ifdef __cplusplus
 }
 #endif

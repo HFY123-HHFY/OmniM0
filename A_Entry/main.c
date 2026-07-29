@@ -111,7 +111,7 @@ int main(void)
 	// usart_printf(USART1, "Zero Set OK\r\n");
 
 	StepMotor_Enable();                   /* 使能（阻塞 ~500ms 等应答）  */
-	StepMotor_GoHome(5000U);              /* 回零（阻塞等到位，最长 5s） */
+	StepMotor_GoHome(3000U);              /* 回零（阻塞等到位，最长 3s） */
 	StepMotor_ConfigMove(600.0f, 400.0f); /* 最大转速 600RPM，加速度 400RPM/s */
 
 	Buzzer_Beep(100);                     /* 短鸣 100ms = 初始化完成     */

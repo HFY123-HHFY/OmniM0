@@ -8,9 +8,16 @@
  *   - 角度 → 脉冲：pulses = angle × 3200 / 360（1.8°电机, 16细分）
  *
  * 架构设计：
- *   - TX：API_USART_WriteByte（G3507_usart.c 已修复为非阻塞）
- *   - RX：轮询 USART3 寄存器（不等中断，直接读 RX FIFO）
- *   - 命令-应答模式：发指令 → 轮询收应答 → 校验
+ *   - TX：API_USART_WriteByte（G3507_usart.c 已修复，不等 BUSY）
+ *   - RX：ISR + 环形缓冲协作模式
+ *     ┌─ USART3 ISR ──────────────────────────┐
+ *     │  usart_irq_dispatch_by_id 读 FIFO       │
+ *     │  → StepMotor_RxPush(byte) → 环形缓冲    │  ← 极快，只入队
+ *     └────────────────────────────────────────┘
+ *     ┌─ 阻塞命令（Enable/GoHome/GetAngle）────┐
+ *     │  StepMotor_RxBuf → 从环形缓冲取字节     │  ← 轮询等待，带超时
+ *     └────────────────────────────────────────┘
+ *   - 非阻塞命令（SetAngle/MoveBy/Stop）：只发不收
  *
  * 参考：张大头官方 STM32 驱动（已验证通过）
  */
@@ -68,10 +75,17 @@ static float    s_cfg_speed = 600.0f;
 static uint8_t  s_cfg_accel = 0x00U;   /* 加速度档位（0=直启） */
 
 /*===========================================================================
- * 内部辅助：USART3 寄存器级轮询收发
- *
- * 参考张大头官方驱动：禁用 UART RX 中断，纯轮询模式。
- * 相比中断模式更可靠：不依赖 ISR 时序，应答数据不会被其他中断抢走。
+ * 环形接收缓冲区（ISR 写入，阻塞命令轮询读取）
+ *===========================================================================*/
+
+#define STEPMOTOR_RX_BUF_SIZE  64U
+
+static uint8_t  s_rx_buf[STEPMOTOR_RX_BUF_SIZE];
+static volatile uint16_t s_rx_head = 0U;   /* ISR 写入位置 */
+static uint16_t s_rx_tail = 0U;            /* 主循环读取位置 */
+
+/*===========================================================================
+ * 内部辅助
  *===========================================================================*/
 
 /*
@@ -88,10 +102,10 @@ static void StepMotor_TxBuf(const uint8_t *data, uint8_t len)
 }
 
 /*
- * 轮询接收 len 字节，超时返回 -1。
+ * 从环形缓冲取 len 字节，超时返回 -1。
  *
- * 直接读 USART3 的 STAT/RXDATA 寄存器，不走中断通路。
- * 应答帧很短（4~8 字节），115200bps 下 <1ms 就能收完。
+ * ISR（StepMotor_RxPush）负责把 USART3 收到的字节推入环形缓冲，
+ * 此函数从环形缓冲取出。不直接读 USART3 寄存器，避免和 ISR 抢 FIFO。
  */
 static int8_t StepMotor_RxBuf(uint8_t *buf, uint8_t len, uint32_t timeoutMs)
 {
@@ -100,10 +114,11 @@ static int8_t StepMotor_RxBuf(uint8_t *buf, uint8_t len, uint32_t timeoutMs)
 
     while (i < len)
     {
-        /* 检查 RX FIFO 非空 */
-        if ((USART3->STAT & (1UL << 5)) != 0U)  /* RXNE = bit5 */
+        if (s_rx_tail != s_rx_head)
         {
-            buf[i++] = (uint8_t)USART3->RXDATA;
+            /* 环形缓冲有数据 */
+            buf[i++] = s_rx_buf[s_rx_tail];
+            s_rx_tail = (uint16_t)((s_rx_tail + 1U) % STEPMOTOR_RX_BUF_SIZE);
         }
         else if ((SysTick_GetMs() - start) >= timeoutMs)
         {
@@ -174,14 +189,39 @@ static int8_t StepMotor_Cmd(uint8_t fc, const uint8_t *data, uint8_t dataLen,
 
 void StepMotor_Init(uint8_t addr)
 {
+    uint16_t i;
+
     s_addr = addr;
     s_cfg_speed = 600.0f;
     s_cfg_accel = 0x00U;
 
-    /* 清空 USART3 RX 残留 */
-    while ((USART3->STAT & (1UL << 5)) != 0U)
+    /* 清零环形缓冲 */
+    s_rx_head = 0U;
+    s_rx_tail = 0U;
+    for (i = 0U; i < STEPMOTOR_RX_BUF_SIZE; i++)
     {
-        (void)USART3->RXDATA;
+        s_rx_buf[i] = 0U;
+    }
+}
+
+/*===========================================================================
+ * StepMotor_RxPush — ISR 调用：USART3 收到字节 → 推入环形缓冲
+ *
+ * 由 Control_Task_USART_Callback 在 USART3 中断中调用。
+ * 极快（< 1µs），只做环形缓冲入队，不在 ISR 中解析协议。
+ *===========================================================================*/
+
+void StepMotor_RxPush(uint8_t data)
+{
+    uint16_t next = (uint16_t)((s_rx_head + 1U) % STEPMOTOR_RX_BUF_SIZE);
+
+    s_rx_buf[s_rx_head] = data;
+    s_rx_head = next;
+
+    /* 缓冲满 → 丢弃最老 1 字节（滑动窗口，防止死锁） */
+    if (next == s_rx_tail)
+    {
+        s_rx_tail = (uint16_t)((s_rx_tail + 1U) % STEPMOTOR_RX_BUF_SIZE);
     }
 }
 
@@ -428,7 +468,7 @@ int8_t StepMotor_SetZero(uint8_t saveToFlash)
  * 命令格式：地址 + 0x9A + 回零模式 + 同步标志 + 0x6B
  *   回零模式：0x00 = 单圈就近回零（方向由驱动器 O_Dir 菜单决定）
  *
- * 发送指令后，每 50ms 读取一次电机状态（0x3A），
+ * 发送指令后，每 10ms 读取一次电机状态（0x3A），
  * 检查到位标志（bit1）且未堵转（bit2=0），即认为回零成功。
  *
  * @param timeoutMs  最大等待时间（ms），默认 5000
@@ -450,7 +490,7 @@ int8_t StepMotor_GoHome(uint32_t timeoutMs)
     }
 
     /* ── 轮询等待回零完成 ── */
-    deadline = timeoutMs / 50U;
+    deadline = timeoutMs / 10U;
     if (deadline == 0U) { deadline = 1U; }
 
     while (deadline > 0U)
@@ -469,7 +509,7 @@ int8_t StepMotor_GoHome(uint32_t timeoutMs)
             return -1;
         }
 
-        Delay_ms(50U);
+        Delay_ms(10U);
         deadline--;
     }
 

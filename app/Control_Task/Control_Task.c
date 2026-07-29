@@ -53,7 +53,7 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     {
         tick_5ms = 0U;
         GrayADC_Task(&g_graySensor);
-	    IRLine_Task(&g_irLine);                /* 幻尔红外 串口帧解析 */
+	    // IRLine_Task(&g_irLine);           /* 幻尔红外 串口帧解析 */
 
         ICM42688_ReadSensor();            /* ICM42688 6轴 burst读 + 偏航积分 */
         Direction_Control();              /* 灰度环PID计算输出 */
@@ -142,7 +142,7 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
             /* 红外循迹模块数据包解析 */
             if (id == API_USART4)
             {
-                IRLine_RxPush((uint8_t)data);
+                // IRLine_RxPush((uint8_t)data);
             }
         }
     } while (rxValid != 0U);

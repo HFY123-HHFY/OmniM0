@@ -17,6 +17,7 @@
 
 #include "StepMotor.h"
 #include "usart.h"              /* API_USART_WriteByte / USART3 */
+#include "Delay.h"              /* Delay_ms                        */
 #include "Control_Task/Control_Task.h"  /* SysTick_GetMs */
 
 /*===========================================================================
@@ -37,6 +38,8 @@
 #define CMD_READ_POS      0x36U   /* 读取实时位置          */
 #define CMD_READ_SPEED    0x35U   /* 读取实时转速          */
 #define CMD_READ_STATUS   0x3AU   /* 读取状态标志位        */
+#define CMD_SET_ZERO      0x93U   /* 设置单圈回零零点      */
+#define CMD_GO_HOME       0x9AU   /* 触发回零              */
 #define CMD_CLEAR_ANGLE   0x0AU
 #define CMD_RELEASE_STALL 0x0EU
 
@@ -383,6 +386,94 @@ int8_t StepMotor_ReleaseStall(void)
     const uint8_t d[] = {0x52};
     uint8_t rx[4];
     return StepMotor_Cmd(CMD_RELEASE_STALL, d, 1U, rx, 4U, TIMEOUT_CTRL_MS);
+}
+
+/*===========================================================================
+ * ⑤ 回零操作
+ *
+ * 协议参考：张大头官方 STM32 驱动
+ *
+ * 回零流程：
+ *   1. 校准阶段（SetZero，仅一次）：
+ *      手动把摆杆转到你想要的机械零点位置 →
+ *      调用 StepMotor_SetZero(1) → 零点存入驱动器 Flash。
+ *
+ *   2. 每次上电（GoHome）：
+ *      Enable → GoHome → 电机自动转到零点 → 进入 PID 控制。
+ *
+ * 回零方向（O_Dir）和回零模式（O_Mode）在驱动器菜单或通过
+ * 0x4C 修改回零参数命令设置，不在本驱动中修改。
+ *===========================================================================*/
+
+/*
+ * 设置单圈回零零点 — 将当前物理位置保存为绝对零点。
+ *
+ * 命令格式：地址 + 0x93 + 0x88 + 存储标志 + 0x6B
+ *
+ * @param saveToFlash  0x01=存入 Flash（掉电保持，推荐）
+ *                     0x00=仅本次上电有效
+ * @retval  0  成功
+ * @retval -1  超时/应答错误
+ */
+int8_t StepMotor_SetZero(uint8_t saveToFlash)
+{
+    const uint8_t d[] = {0x88, (saveToFlash != 0U) ? 0x01U : 0x00U};
+    uint8_t rx[4];
+    return StepMotor_Cmd(CMD_SET_ZERO, d, 2U, rx, 4U, TIMEOUT_CTRL_MS);
+}
+
+/*
+ * 触发单圈回零并阻塞等待完成。
+ *
+ * 命令格式：地址 + 0x9A + 回零模式 + 同步标志 + 0x6B
+ *   回零模式：0x00 = 单圈就近回零（方向由驱动器 O_Dir 菜单决定）
+ *
+ * 发送指令后，每 50ms 读取一次电机状态（0x3A），
+ * 检查到位标志（bit1）且未堵转（bit2=0），即认为回零成功。
+ *
+ * @param timeoutMs  最大等待时间（ms），默认 5000
+ * @retval  0  回零成功
+ * @retval -1  超时 / 堵转 / 指令被拒绝
+ */
+int8_t StepMotor_GoHome(uint32_t timeoutMs)
+{
+    const uint8_t d[] = {0x00, 0x00};  /* 单圈就近模式 + 立即执行 */
+    uint8_t rx[4];
+    int8_t  ret;
+    uint32_t deadline;
+
+    /* ── 发送回零指令 ── */
+    ret = StepMotor_Cmd(CMD_GO_HOME, d, 2U, rx, 4U, 1000U);
+    if (ret != 0)
+    {
+        return -1;  /* 超时 / 应答不匹配 / 被拒绝（rx[2]==0xE2 表示条件不满足） */
+    }
+
+    /* ── 轮询等待回零完成 ── */
+    deadline = timeoutMs / 50U;
+    if (deadline == 0U) { deadline = 1U; }
+
+    while (deadline > 0U)
+    {
+        uint8_t st = StepMotor_GetStatus();
+
+        /* 到位 且 未堵转 → 回零成功 */
+        if ((st & STEPMOTOR_STAT_INPOS) && !(st & STEPMOTOR_STAT_STALL))
+        {
+            return 0;
+        }
+
+        /* 堵转保护触发 → 回零失败 */
+        if (st & STEPMOTOR_STAT_PROTECT)
+        {
+            return -1;
+        }
+
+        Delay_ms(50U);
+        deadline--;
+    }
+
+    return -1;  /* 超时 */
 }
 
 /*===========================================================================

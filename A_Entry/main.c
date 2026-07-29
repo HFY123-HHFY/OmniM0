@@ -95,13 +95,36 @@ int main(void)
 	StepMotor_Init(0x01);             		/* 张大头步进电机（USART3, 地址=0x01） */
 
     API_TIM_Init(API_TIM1, 1U); /* TIMG0 1ms ISR 启动 —— 所有硬件已就绪 */
-	Buzzer_Beep(200);           /* 蜂鸣器短鸣 200ms，非阻塞（依赖 g_sys_tick_ms） */
 
-	/* ── 步进电机使能 + 运动参数配置 ── */
-	StepMotor_Enable();                        /* 使能（非阻塞，直接写寄存器） */
-	Delay_ms(20U);                             /* 给电机驱动板处理时间 */
+	/* ── 步进电机：使能 → 回零 → 配置运动参数 ── */
+	StepMotor_Enable();                        /* 使能（阻塞等应答 ~500ms） */
+	Delay_ms(20U);
+
+	/*
+	 * ★ 零点校准（仅需一次！用完立即注释掉！）
+	 *
+	 * 步骤：
+	 *   1. 取消下面 SetZero 的注释
+	 *   2. 把摆杆手动拨到你想要的零点角度
+	 *   3. 烧录运行 → 看到 "Zero Set OK"
+	 *   4. 重新注释掉 SetZero，再次烧录
+	 */
+	// StepMotor_SetZero(1);
+	// usart_printf(USART1, "Zero Set OK\r\n");
+
+	/* 每次上电触发回零（阻塞等待完成，最长 5 秒） */
+	if (StepMotor_GoHome(5000U) == 0)
+	{
+		usart_printf(USART1, "Home OK\r\n");
+	}
+	else
+	{
+		usart_printf(USART1, "Home FAIL!\r\n");
+	}
+
 	StepMotor_ConfigMove(600.0f, 400.0f);      /* 最大 600RPM，加速度 400RPM/s */
 	usart_printf(USART1, "Motor ready\r\n");
+	Buzzer_Beep(100);           /* 蜂鸣器短鸣 50ms，非阻塞（依赖 g_sys_tick_ms） */
 
 	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f);
 	// Set_PID(&direction_pid,  0.50f, 0.0f, 0.010f);      /* 灰度方向环：kp=2.0 ki=0.5 kd=0.1 */
@@ -164,11 +187,11 @@ int main(void)
 			OLED_Printf(0,  0, OLED_6X8, "T%d", s_task_select); // 当前任务
 			OLED_Printf(32, 0, OLED_6X8, "%lus", Task_2_GetLapTime()); // 圈时
 
-			OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-            g_irLine.digital_bits[0], g_irLine.digital_bits[1],
-            g_irLine.digital_bits[2], g_irLine.digital_bits[3],
-            g_irLine.digital_bits[4], g_irLine.digital_bits[5],
-            g_irLine.digital_bits[6], g_irLine.digital_bits[7]); // 红外8路
+			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
+            // g_irLine.digital_bits[0], g_irLine.digital_bits[1],
+            // g_irLine.digital_bits[2], g_irLine.digital_bits[3],
+            // g_irLine.digital_bits[4], g_irLine.digital_bits[5],
+            // g_irLine.digital_bits[6], g_irLine.digital_bits[7]); // 红外8路
 
 			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
 			// g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],

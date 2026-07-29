@@ -2,6 +2,9 @@
 #include <sys/stat.h>
 #include "ti/driverlib/dl_uart_main.h"
 
+/* 系统毫秒计数器（TIMG0 ISR 每 1ms +1，用于帧超时检测） */
+extern volatile uint32_t g_sys_tick_ms;
+
 /*
  * 发送环形队列结构：
  * - head: 生产者写入位置（主循环或任务上下文）
@@ -114,6 +117,57 @@ static void usart_write_data(USART_TypeDef *USARTx, uint8_t data)
 
 /* 全局接收解析状态。 */
 USART_DataType USART_DataTypeStruct;
+
+/* ── 摄像头数据全局缓存（USART2 解析后供 PID 环使用）── */
+int16_t g_cam_data[CAM_DATA_LEN] = {0};
+uint8_t g_cam_count = 0U;
+
+/*
+ * parse_buffer_to_int — 把 buffer 中 ASCII 数字字符串转为 int16_t。
+ * 支持负数（首个字符为 '-'）。
+ * 返回：转换成功返回 true，非法字符返回 false。
+ */
+static uint8_t parse_buffer_to_int(const uint8_t *buf, uint8_t len, int16_t *out)
+{
+	uint8_t i;
+	uint8_t is_negative;
+	int16_t value;
+
+	if ((buf == 0) || (out == 0) || (len == 0U))
+	{
+		return 0U;
+	}
+
+	is_negative = 0U;
+	i = 0U;
+	value = 0;
+
+	if (buf[0] == '-')
+	{
+		is_negative = 1U;
+		i = 1U;
+	}
+
+	for (; i < len; i++)
+	{
+		if ((buf[i] >= '0') && (buf[i] <= '9'))
+		{
+			value = (int16_t)(value * 10 + (int16_t)(buf[i] - '0'));
+		}
+		else
+		{
+			return 0U; /* 非法字符 */
+		}
+	}
+
+	if (is_negative != 0U)
+	{
+		value = (int16_t)(-value);
+	}
+
+	*out = value;
+	return 1U;
+}
 
 /*
  * 把 USARTx 寄存器实例转换为 API 层 ID。
@@ -415,153 +469,126 @@ void usart_irq_dispatch_by_id(API_USART_Id_t id, uint32_t *rxData, uint8_t *rxVa
 }
 
 /*
- * 串口数据包解析：
- * 协议格式：s12,-34,56e
- * 解析完成后：state=2，可通过 USART_Deal 读取 data[]。
+ * 串口数据包解析（重构版）：
+ *
+ * 协议格式：s<val1>,<val2>,...,<valN>e
+ * 示例：   s88,-93,104e  →  data[0]=88, data[1]=-93, data[2]=104
+ *
+ * 改进点：
+ * - 数字解析提取到 parse_buffer_to_int，消除 ~20 行重复代码
+ * - 去掉 memset，仅 reset buffer_len（解析只读到 buffer_len）
+ * - data[] 类型统一为 int16_t，不再强转
+ * - 记录 start_tick 供帧超时检测使用
  */
-void usart_Dispose_Data(USART_TypeDef *USARTx, USART_DataType *USART_DataTypeStruct, uint8_t RxData)
+void usart_Dispose_Data(USART_TypeDef *USARTx, USART_DataType *p, uint8_t RxData)
 {
 	(void)USARTx;
 
-	switch (USART_DataTypeStruct->state)
+	switch (p->state)
 	{
-	case 0:
+	case 0: /* ── 空闲，等待包头 's' ── */
 		if (RxData == 's')
 		{
-			USART_DataTypeStruct->state = 1U;
-			USART_DataTypeStruct->current_index = 0U;
-			USART_DataTypeStruct->buffer_len = 0U;
-			memset(USART_DataTypeStruct->buffer, 0, sizeof(USART_DataTypeStruct->buffer));
+			p->state = 1U;
+			p->current_index = 0U;
+			p->buffer_len   = 0U;
+			p->count        = 0U;
+			p->start_tick   = g_sys_tick_ms; /* 记录起始时刻 */
 		}
 		break;
 
-	case 1:
+	case 1: /* ── 接收中 ── */
 		if (RxData == 'e')
 		{
-			if (USART_DataTypeStruct->buffer_len > 0U)
+			/* 包尾：解析缓冲区中最后一个数值 */
+			if (p->buffer_len > 0U)
 			{
 				int16_t value;
-				uint8_t i;
-				uint8_t is_negative;
-
-				value = 0;
-				i = 0U;
-				is_negative = 0U;
-				if (USART_DataTypeStruct->buffer[0] == '-')
+				if ((parse_buffer_to_int(p->buffer, p->buffer_len, &value) != 0U)
+				    && (p->current_index < Data_len))
 				{
-					is_negative = 1U;
-					i = 1U;
-				}
-
-				for (; i < USART_DataTypeStruct->buffer_len; i++)
-				{
-					if ((USART_DataTypeStruct->buffer[i] >= '0') && (USART_DataTypeStruct->buffer[i] <= '9'))
-					{
-						value = (int16_t)(value * 10 + (USART_DataTypeStruct->buffer[i] - '0'));
-					}
-					else
-					{
-						USART_DataTypeStruct->state = 0U;
-						break;
-					}
-				}
-
-				if (is_negative != 0U)
-				{
-					value = (int16_t)(-value);
-				}
-
-				if (USART_DataTypeStruct->current_index < Data_len)
-				{
-					USART_DataTypeStruct->data[USART_DataTypeStruct->current_index] = (uint16_t)value;
-					USART_DataTypeStruct->count = (uint8_t)(USART_DataTypeStruct->current_index + 1U);
+					p->data[p->current_index] = value;
+					p->count = (uint8_t)(p->current_index + 1U);
 				}
 			}
-			USART_DataTypeStruct->state = 2U;
+			p->state = 2U; /* 完成 */
 		}
 		else if (RxData == ',')
 		{
-			if (USART_DataTypeStruct->buffer_len > 0U)
+			/* 分隔符：存储当前 buffer 中的数值 */
+			if (p->buffer_len > 0U)
 			{
 				int16_t value;
-				uint8_t i;
-				uint8_t is_negative;
-
-				value = 0;
-				i = 0U;
-				is_negative = 0U;
-				if (USART_DataTypeStruct->buffer[0] == '-')
+				if ((parse_buffer_to_int(p->buffer, p->buffer_len, &value) != 0U)
+				    && (p->current_index < Data_len))
 				{
-					is_negative = 1U;
-					i = 1U;
+					p->data[p->current_index] = value;
+					p->current_index++;
 				}
-
-				for (; i < USART_DataTypeStruct->buffer_len; i++)
-				{
-					if ((USART_DataTypeStruct->buffer[i] >= '0') && (USART_DataTypeStruct->buffer[i] <= '9'))
-					{
-						value = (int16_t)(value * 10 + (USART_DataTypeStruct->buffer[i] - '0'));
-					}
-					else
-					{
-						USART_DataTypeStruct->state = 0U;
-						break;
-					}
-				}
-
-				if (is_negative != 0U)
-				{
-					value = (int16_t)(-value);
-				}
-
-				if (USART_DataTypeStruct->current_index < Data_len)
-				{
-					USART_DataTypeStruct->data[USART_DataTypeStruct->current_index] = (uint16_t)value;
-					USART_DataTypeStruct->current_index++;
-				}
-
-				USART_DataTypeStruct->buffer_len = 0U;
-				memset(USART_DataTypeStruct->buffer, 0, sizeof(USART_DataTypeStruct->buffer));
 			}
+			p->buffer_len = 0U; /* 准备接收下一个数值 */
 		}
 		else if (((RxData >= '0') && (RxData <= '9')) || (RxData == '-'))
 		{
-			if (USART_DataTypeStruct->buffer_len < 15U)
+			/* 数字字符或负号 */
+			if (p->buffer_len < 15U)
 			{
-				if ((RxData == '-') && (USART_DataTypeStruct->buffer_len != 0U))
+				/* 负号只能出现在 buffer 开头，否则是非法帧 */
+				if ((RxData == '-') && (p->buffer_len != 0U))
 				{
-					USART_DataTypeStruct->state = 0U;
+					p->state = 0U;
 				}
 				else
 				{
-					USART_DataTypeStruct->buffer[USART_DataTypeStruct->buffer_len++] = RxData;
+					p->buffer[p->buffer_len++] = RxData;
 				}
 			}
 			else
 			{
-				USART_DataTypeStruct->state = 0U;
+				p->state = 0U; /* buffer 溢出，丢弃 */
 			}
 		}
 		else
 		{
-			USART_DataTypeStruct->state = 0U;
+			/* 非法字符，丢弃整帧 */
+			p->state = 0U;
 		}
 		break;
 
-	case 2:
+	case 2: /* ── 完成态，等待下一个包头 ── */
 		if (RxData == 's')
 		{
-			USART_DataTypeStruct->state = 1U;
-			USART_DataTypeStruct->current_index = 0U;
-			USART_DataTypeStruct->count = 0U;
-			USART_DataTypeStruct->buffer_len = 0U;
-			memset(USART_DataTypeStruct->buffer, 0, sizeof(USART_DataTypeStruct->buffer));
+			p->state = 1U;
+			p->current_index = 0U;
+			p->count        = 0U;
+			p->buffer_len   = 0U;
+			p->start_tick   = g_sys_tick_ms;
 		}
 		break;
 
 	default:
-		USART_DataTypeStruct->state = 0U;
+		p->state = 0U;
 		break;
+	}
+}
+
+/*
+ * usart_FrameTimeout_Check — 帧超时保护
+ *
+ * 在 TIMG0 ISR 5ms 槽中周期性调用。
+ * 如果解析器在 state=1（正在接收）超过 timeout_ms，
+ * 自动复位到 state=0，防止噪声 's' 触发后永久卡死。
+ */
+void usart_FrameTimeout_Check(USART_DataType *p, uint32_t timeout_ms)
+{
+	if ((p == 0) || (p->state != 1U))
+	{
+		return;
+	}
+
+	if ((g_sys_tick_ms - p->start_tick) >= timeout_ms)
+	{
+		p->state = 0U;
 	}
 }
 
@@ -573,55 +600,31 @@ int16_t USART_Deal(USART_DataType *pData, int8_t index)
 		return 0;
 	}
 
-	return (int16_t)pData->data[(uint8_t)index];
+	return pData->data[(uint8_t)index];
 }
 
-/* 测试示例 */
-/* 串口数据包解析测试：收到完整数据包(s12,-34,56e)后回传解析结果 */
-void USART_Test(void)
+/*
+ * USART_CamCapture — 摄像头数据包捕获
+ *
+ * 在 USART ISR 回调中检测到 state=2 后调用。
+ * 把解析出的数据复制到 g_cam_data[] 全局数组，供 PID 环和 OLED 显示使用。
+ */
+void USART_CamCapture(void)
 {
-	if (USART_DataTypeStruct.state == 2U)
+	uint8_t i;
+	uint8_t n;
+
+	n = USART_DataTypeStruct.count;
+	if (n > CAM_DATA_LEN)
 	{
-		uint8_t i;
-		uint8_t count = USART_DataTypeStruct.count;
-		int16_t values[10];
-		for (i = 0U; i < count; i++)
-		{
-			values[i] = USART_Deal(&USART_DataTypeStruct, (int8_t)i);
-		}
-		USART_DataTypeStruct.state = 0U;
-
-		usart_printf(USART1, "Packet[%d]: ", count);
-		for (i = 0U; i < count; i++)
-		{
-			if (i > 0U)
-			{
-				usart_printf(USART1, ",");
-			}
-			usart_printf(USART1, "%d", values[i]);
-		}
-		usart_printf(USART1, "\r\n");
+		n = CAM_DATA_LEN;
 	}
+
+	for (i = 0U; i < n; i++)
+	{
+		g_cam_data[i] = USART_DataTypeStruct.data[i];
+	}
+	g_cam_count = n;
+
+	USART_DataTypeStruct.state = 0U; /* 消费完毕，准备下一帧 */
 }
-
-/* 摄像头数据包接收示例：固定 3 个数据 s88,-93,104e */
-		// if (USART_DataTypeStruct.state == 2U)
-		// {
-		// 	uint8_t i;
-		// 	/* 1. 缓存解析结果到全局数组 */
-		// 	USART_Packet_Count = USART_DataTypeStruct.count;
-		// 	for (i = 0U; i < USART_Packet_Count; i++)
-		// 	{
-		// 		USART_Packet_Data[i] = USART_Deal(&USART_DataTypeStruct, (int8_t)i);
-		// 	}
-		// 	USART_DataTypeStruct.state = 0U;
-
-		// 	/* 2. 校验数据完整性并读取 */
-		// 	if (USART_Packet_Count == 3U)
-		// 	{
-		// 		int16_t cam_x = USART_Packet_Data[0];
-		// 		int16_t cam_y = USART_Packet_Data[1];
-		// 		int16_t cam_z = USART_Packet_Data[2];
-		// 		usart_printf(USART1, "X:%d, Y:%d, Z:%d\r\n", cam_x, cam_y, cam_z);
-		// 	}
-		// }

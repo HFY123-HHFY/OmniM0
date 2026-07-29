@@ -22,9 +22,7 @@ TaskManager tasks = {
     .oled_100ms = { .period = 100 },   /* 显示：OLED 刷新    */
 };
 
-/* ── 串口数据包缓存（USART 中断回调使用）── */
-int16_t USART_Packet_Data[USART_PACKET_DATA_LEN] = {0};
-uint8_t USART_Packet_Count = 0;
+/* ── 串口数据包由 My_Usart 模块 g_cam_data[] / g_cam_count 管理 ── */
 
 /* ── 系统毫秒计数器（TIMG0 ISR 每 1ms +1，全局可读）── */
 volatile uint32_t g_sys_tick_ms;
@@ -56,8 +54,10 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
         GrayADC_Task(&g_graySensor);
         // YaboIR_Task(&g_yaboIR);        /* 亚博红外 串口帧解析 */
 
-		ICM42688_ReadSensor();            /* ICM42688 6轴 burst读 + 偏航积分 */
+        ICM42688_ReadSensor();            /* ICM42688 6轴 burst读 + 偏航积分 */
         Direction_Control();              /* 灰度环PID计算输出 */
+
+        usart_FrameTimeout_Check(&USART_DataTypeStruct, 100U); /* 帧超时 100ms 自动复位 */
     }
 
     /* ── 3. 控制 @20ms：编码器快照 + 任务调度 ── */
@@ -120,8 +120,16 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
         usart_irq_dispatch_by_id(id, &data, &rxValid);
         if (rxValid != 0U)
         {
+            if (id == API_USART2)
+            {
+                usart_Dispose_Data(USART2, &USART_DataTypeStruct, (uint8_t)data);
 
-            
+                /* 收到完整数据包后立即捕获到全局变量 */
+                if (USART_DataTypeStruct.state == 2U)
+                {
+                    USART_CamCapture();
+                }
+            }
 
             // if (id == API_USART4)
             // {

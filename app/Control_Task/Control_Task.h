@@ -46,10 +46,8 @@ void      NonBlockDelay_Start(NonBlockDelay_t *d, uint16_t ms);
 uint8_t   NonBlockDelay_IsDone(NonBlockDelay_t *d);
 uint32_t  SysTick_GetMs(void);
 
-/* ── 串口数据包解析结果缓存 ── */
-#define USART_PACKET_DATA_LEN 10U
-extern int16_t USART_Packet_Data[USART_PACKET_DATA_LEN];
-extern uint8_t USART_Packet_Count;
+/* ── 串口数据包解析结果缓存（由 My_Usart 模块管理）── */
+/* 全局变量 g_cam_data[] / g_cam_count 声明在 My_Usart.h */
 
 /* ── 中断回调 ── */
 void Control_Task_TIM_Callback(API_TIM_Id_t id);

@@ -63,7 +63,7 @@ int main(void)
 
 /* 初始化层：初始化相关外设，启动硬件功能 */
 	API_USART_Init(API_USART1, 115200U); // 初始化 USART1-板载串口调试
-	API_USART_Init(API_USART2, 115200U); // 初始化 USART2-JY61P 陀螺仪 - 预留当前陀螺仪使用ICM42688
+	API_USART_Init(API_USART2, 115200U); // 初始化 USART2 - 与K230通信
 	API_USART_Init(API_USART3, 115200U); // 初始化 USART3-无线串口调试
 	API_USART_Init(API_USART4, 115200U); // 初始化 USART4-亚博八路红外灰度
 	API_PWM_Init(API_PWM_TIM1, 4000U - 1U, 1U - 1U); /* TIMG7@PD1 电机A相 */
@@ -122,6 +122,7 @@ int main(void)
 		if (tasks.print_50ms.flag)
 		{
 			tasks.print_50ms.flag = false;
+			// usart_printf(USART2, "Key: %lu\r\n", Key);
 			// YaboIR_PrintBits(&g_yaboIR, USART1);    /* 亚博红外（当前切回感为灰度） */
 			// usart_printf(USART1, "R:%.2f P:%.2f Y:%.2f\r\n", icmRoll, icmPitch, icmYaw);
 			// GrayADC_PrintRaw(&g_graySensor, USART3);
@@ -142,6 +143,9 @@ int main(void)
             g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
             g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
             g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); // 灰度值
+
+			/* 摄像头数据（USART2 接收 s<data>e） */
+			OLED_Printf(0, 16, OLED_6X8, "%+d", g_cam_data[0]);
 
 			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
 			// g_yaboIR.digital_bits[0], g_yaboIR.digital_bits[1],

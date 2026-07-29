@@ -41,19 +41,28 @@ typedef G3507_USART_View_t USART_TypeDef;
  * - 's'：包头
  * - ','：分隔符
  * - 'e'：包尾
+ *
+ * data[] 改为 int16_t，解析结果直接存储有符号值，
+ * 避免 uint16_t ↔ int16_t 来回强转导致负值被扭曲。
  */
 typedef struct
 {
-	uint16_t data[Data_len];
+	int16_t data[Data_len];
 	uint8_t count;
 	uint8_t state;
 	uint8_t current_index;
 	uint8_t buffer[16];
 	uint8_t buffer_len;
+	uint32_t start_tick;       /* 收到 's' 时的系统 tick，用于帧超时检测 */
 } USART_DataType;
 
 /* 全局解析状态实例，建议在中断中喂数据，在主循环中读取结果。 */
 extern USART_DataType USART_DataTypeStruct;
+
+/* ── 摄像头数据全局缓存（USART2 解析后使用）── */
+#define CAM_DATA_LEN  4U
+extern int16_t g_cam_data[CAM_DATA_LEN];
+extern uint8_t g_cam_count;
 
 /*
  * 发送单字节（优先异步，不行则退化阻塞发送）。
@@ -108,5 +117,19 @@ void usart_Dispose_Data(USART_TypeDef *USARTx, USART_DataType *USART_DataTypeStr
  * 返回：索引有效则返回数据，否则返回 0。
  */
 int16_t USART_Deal(USART_DataType *pData, int8_t index);
+
+/*
+ * 帧超时检测：若解析器在 state=1 超过 timeout_ms 仍未收到 'e'，
+ * 自动复位到 state=0（防止噪声触发 's' 后永久卡死）。
+ * 建议在 TIMG0 ISR 5ms 槽中调用。
+ */
+void usart_FrameTimeout_Check(USART_DataType *pData, uint32_t timeout_ms);
+
+/*
+ * 摄像头数据包捕获：把 USART_DataTypeStruct 中解析好的数据
+ * 复制到 g_cam_data[] 全局数组，并消费状态机（state 归零）。
+ * 在 USART 中断回调中检测到 state=2 后调用。
+ */
+void USART_CamCapture(void);
 
 #endif

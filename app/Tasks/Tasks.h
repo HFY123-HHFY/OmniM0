@@ -7,11 +7,6 @@
 extern "C" {
 #endif
 
-/* ── 灰度事件标志位（5ms ISR 置位，任务消费清零）── */
-/* 检测器内部 LOCKOUT 保证每次入/离线只触发一次，不会反复置位 */
-extern volatile uint8_t s_gray_enter_fired;   /* 入线事件：1 = 待消费 */
-extern volatile uint8_t s_gray_exit_fired;    /* 出线事件：1 = 待消费 */
-
 /* ══════════════════════════════════════════════════════════════════════
  * 任务链调度框架
  *
@@ -32,11 +27,14 @@ uint8_t Task_GetSelect(void);      /* KEY2 当前选中任务号 (1-4)          
 uint8_t Task_GetActive(void);      /* 正在运行的任务号，待机时为 0         */
 uint8_t Task_GetPos(void);         /* 当前位置：1-4 段中，5=完成           */
 
-/* ── 任务函数（空壳，待开发）── */
+/* ── 任务函数 ── */
 void Task_1(void);
 void Task_2(void);
 void Task_3(void);
 void Task_4(void);
+
+/* ── Task_2 圈时接口（供 OLED 显示）── */
+uint32_t Task_2_GetLapTime(void);   /* 返回圈时（秒），运行中=实时，完成=冻结，其他=0 */
 
 #ifdef __cplusplus
 }

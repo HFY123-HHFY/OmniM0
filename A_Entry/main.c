@@ -33,7 +33,7 @@
 #include "gray_adc.h"
 #include "MPU6050.h"
 #include "MPU6050_Int.h"
-// #include "jy61p.h"
+#include "yabo_ir.h"
 
 /* ── 调试开关 ── */
 #define DEBUG_PRINT_ENABLE  1U   /* 开启/关闭串口 printf 调试输出 */
@@ -65,7 +65,7 @@ int main(void)
 	API_USART_Init(API_USART1, 115200U); // 初始化 USART1-板载串口调试
 	API_USART_Init(API_USART2, 115200U); // 初始化 USART2-JY61P 陀螺仪 - 预留当前陀螺仪使用ICM42688
 	API_USART_Init(API_USART3, 115200U); // 初始化 USART3-无线串口调试
-	API_USART_Init(API_USART4, 115200U); // 初始化 USART4-预留串口
+	API_USART_Init(API_USART4, 115200U); // 初始化 USART4-亚博八路红外灰度
 	API_PWM_Init(API_PWM_TIM1, 4000U - 1U, 1U - 1U); /* TIMG7@PD1 电机A相 */
 	API_PWM_Init(API_PWM_TIM2, 4000U - 1U, 1U - 1U); /* TIMG6@PD1 电机A相 */
 	// API_PWM_Init(API_PWM_TIM3, 4000U - 1U, 1U - 1U); /* TIMA0@PD1 电机B相 */
@@ -86,15 +86,16 @@ int main(void)
 	OLED_Init(OLED_IF_SPI);		 			/* OLED_IF_I2C(4针) / OLED_IF_SPI(7针) */
 	uint8_t icmOk = ICM42688_Init();	/* ICM42688 陀螺仪（SPI2, 5MHz） */
 	usart_printf(USART1, "ICM42688=%d\r\n", icmOk);
-	// JY61P_Init();							/* JY61P 陀螺仪数据结构初始化 */
 	API_Motor_Init();						/* 电机驱动初始化-上电刹车（当前=A4950） */
 	API_Encoder_Init(API_ENCODER_1); 		/* 编码器 1 初始化 */
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
 
-	// JY61P_ZAxisZero(); /* 当前朝向设为 0°，阻塞约 3.5 秒（CPU 循环延时，不依赖 tick） */
+    /* 亚博红外巡线模块 — USART4 已初始化，发送命令启动数字量上报 */
+    YaboIR_Init(&g_yaboIR);
+    YaboIR_SendCmd();
 
-	API_TIM_Init(API_TIM1, 1U); /* TIMG0 1ms ISR 启动 —— 所有硬件已就绪 */
+    API_TIM_Init(API_TIM1, 1U); /* TIMG0 1ms ISR 启动 —— 所有硬件已就绪 */
 	Buzzer_Beep(200);           /* 蜂鸣器短鸣 200ms，非阻塞（依赖 g_sys_tick_ms） */
 
 	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f);
@@ -122,9 +123,9 @@ int main(void)
 		if (tasks.print_50ms.flag)
 		{
 			tasks.print_50ms.flag = false;
+			YaboIR_PrintBits(&g_yaboIR, USART1);
 			// usart_printf(USART1, "R:%.2f P:%.2f Y:%.2f\r\n", icmRoll, icmPitch, icmYaw);
 			// GrayADC_PrintRaw(&g_graySensor, USART3);
-			// usart_printf(USART1, "key: %lu\r\n", Key);
 		}
 #endif
 
@@ -134,17 +135,19 @@ int main(void)
 		{
 			tasks.oled_100ms.flag = false;
 			OLED_Clear();
-			OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-			g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
-			g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
-			g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
-			g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]);
-			OLED_Printf(0,  0, OLED_6X8, "T%d", s_task_select);
-			OLED_Printf(32, 0, OLED_6X8, "Y%+d", yaw_pid.output);
-			// OLED_Printf(64, 0, OLED_6X8, "D%+d", direction_pid.output);
-			OLED_Printf(0, 16, OLED_6X8, "R%+.1f P%+.1f", g_icm42688.roll, g_icm42688.pitch);
-			OLED_Printf(0, 32, OLED_6X8, "Y%+.3f", g_icm42688.yaw);
-			OLED_Printf(0, 48, OLED_6X8, "L%+d R%+d", Encoder1_Speed, Encoder2_Speed);
+			OLED_Printf(0,  0, OLED_6X8, "T%d", s_task_select); // 当前任务
+			OLED_Printf(32, 0, OLED_6X8, "%lus", Task_2_GetLapTime()); // 圈时
+			
+			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
+			// g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
+			// g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
+			// g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
+			// g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); // 灰度值
+			// OLED_Printf(32, 0, OLED_6X8, "Y%+d", yaw_pid.output); // 偏航角环输出
+			// OLED_Printf(64, 0, OLED_6X8, "D%+d", direction_pid.output); // 灰度方向环输出
+			// OLED_Printf(0, 16, OLED_6X8, "R%+.1f P%+.1f", g_icm42688.roll, g_icm42688.pitch); // ICM42688 姿态角
+			// OLED_Printf(0, 32, OLED_6X8, "Y%+.3f", g_icm42688.yaw); // ICM42688 偏航角
+			// OLED_Printf(0, 48, OLED_6X8, "L%+d R%+d", Encoder1_Speed, Encoder2_Speed); // 编码器速度
 			OLED_Update();
 		}
 #endif

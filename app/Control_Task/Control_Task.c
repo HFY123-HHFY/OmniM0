@@ -4,15 +4,14 @@
 #include "usart.h"
 #include "My_Usart/My_Usart.h"
 #include "Control/Control.h"
-#include "Detect/Detect.h"   /* GrayDetect_EnterLine / GrayDetect_ExitLine */
-#include "Tasks/Tasks.h"    /* s_gray_enter_fired / Task_Run */
+#include "Tasks/Tasks.h"    /* Task_Run */
 #include "KEY.h"
 #include "Encoder.h"
 #include "G3507_Encoder.h"
 #include "gray_adc.h"
-// #include "jy61p.h"
 #include "API_Motor.h"
 #include "ICM42688.h"
+#include "yabo_ir.h"
 
 /* ══════════════════════════════════════════════════════════════════════
  * 全局任务管理器实例（仅管理主循环执行的低频任务）
@@ -56,14 +55,10 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     {
         tick_5ms = 0U;
 
-        GrayADC_Task(&g_graySensor);
-        // JY61P_Task();           /* JY61P 偏航角数据包 */
+        // GrayADC_Task(&g_graySensor);
+        YaboIR_Task(&g_yaboIR);                      /* 亚博红外 串口帧解析 */
+
 		ICM42688_ReadSensor();  /* ICM42688 6轴 burst读 + 偏航积分 */
-
-        /* 出入线检测 → 互斥置位：一方触发则清零对方，保证两者不同时为 1 */
-        if (GrayDetect_EnterLine()) { s_gray_enter_fired = 1U; s_gray_exit_fired = 0U; }
-        if (GrayDetect_ExitLine())  { s_gray_exit_fired  = 1U; s_gray_enter_fired = 0U; }
-
         Direction_Control(); /* 灰度环PID计算输出 */
     }
 
@@ -127,10 +122,10 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
         usart_irq_dispatch_by_id(id, &data, &rxValid);
         if (rxValid != 0U)
         {
-            // if (id == API_USART2)
-            // {
-            //     JY61P_RxPush((uint8_t)data);  /* 只入队，解析交给主循环 JY61P_Task() */
-            // }
+            if (id == API_USART4)
+            {
+                YaboIR_RxPush((uint8_t)data);
+            }
         }
     } while (rxValid != 0U);
 }

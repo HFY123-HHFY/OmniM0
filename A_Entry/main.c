@@ -60,34 +60,36 @@ int main(void)
 	Enroll_Encoder_Register();
 	Enroll_GrayADC_Register();
 
-	/* 注册后绑定中断回调（此时硬件尚未初始化，只登记函数指针） */
 	Enroll_USART_RegisterIrqHandler(Control_Task_USART_Callback);
 	API_TIM_RegisterIrqHandler(API_TIM1, Control_Task_TIM_Callback);
 
 	/* ══════════════════════════════════════════════════════════════════
-	 * 阶段 2：外设硬件初始化（按依赖顺序：先通信口，再器件）
+	 * 阶段 2：外设硬件初始化
 	 * ══════════════════════════════════════════════════════════════════ */
-	API_USART_Init(API_USART1, 115200U);  /* 调试串口            */
-	API_USART_Init(API_USART2, 115200U);  /* K230 摄像头通信      */
-	API_USART_Init(API_USART3, 115200U);  /* 步进电机 / 无线调试   */
-	API_USART_Init(API_USART4, 115200U);  /* 八路红外灰度         */
+	API_USART_Init(API_USART1, 115200U);
+	API_USART_Init(API_USART2, 115200U);
+	API_USART_Init(API_USART3, 115200U);
+	API_USART_Init(API_USART4, 115200U);
 	API_PWM_Init(API_PWM_TIM1, 4000U - 1U, 1U - 1U);
 	API_PWM_Init(API_PWM_TIM2, 4000U - 1U, 1U - 1U);
+	// API_PWM_Init(API_PWM_TIM3, 4000U - 1U, 1U - 1U); /* TIMA0@PD1 电机B相 */
+	// API_PWM_Init(API_PWM_TIM4, 4000U - 1U, 1U - 1U); /* TIMA1@PD1 预留PWM */
+	// API_PWM_Init(API_PWM_TIM5, 2000U - 1U, 1U - 1U); /* TIMG8@PD0 预留PWM */
 	API_ADC_Init(API_ADC1);
-	GrayADC_Init();                       /* 必须在 TIM 前 */
+	GrayADC_Init();
 
 	API_I2C_Init();
 	API_SPI_Init();
-	// App_I2C_ScanOnce();				/* 开机执行一次 I2C 扫描 */
-	// App_SPI_TestOnce();				/* 开机执行一次 SPI 测试 */
+	// App_I2C_ScanOnce();
+	// App_SPI_TestOnce();
 
 	/* ══════════════════════════════════════════════════════════════════
-	 * 阶段 3：BSP 设备初始化（按依赖：GPIO → SPI/I2C → 传感器 → 电机）
+	 * 阶段 3：BSP 设备初始化
 	 * ══════════════════════════════════════════════════════════════════ */
 	LED_Init(LED_LOW);
 	KEY_Init();
 	OLED_Init(OLED_IF_SPI);
-	ICM42688_Init();                      /* 返回值忽略，无传感器也不阻塞 */
+	ICM42688_Init();
 	API_Motor_Init();
 	API_Encoder_Init(API_ENCODER_1);
 	API_Encoder_Init(API_ENCODER_2);
@@ -96,25 +98,37 @@ int main(void)
 	StepMotor_Init(0x01);
 
 	/* ══════════════════════════════════════════════════════════════════
-	 * 阶段 4：启动系统时基 → 所有硬件就绪 → 使能中断
+	 * 阶段 4：启动系统时基
 	 * ══════════════════════════════════════════════════════════════════ */
-	API_TIM_Init(API_TIM1, 1U);           /* TIMG0 1ms ISR 启动 */
+	API_TIM_Init(API_TIM1, 1U);
 
 	/* ══════════════════════════════════════════════════════════════════
-	 * 阶段 5：步进电机使能 + 回零（依赖 TIMG0 的 g_sys_tick_ms 做超时）
+	 * 阶段 5：步进电机使能 + 回零
 	 *
-	 * 校准零点（仅一次，用完立即注释！）：
-	 *   1. 取消 SetZero 注释 → 烧录 → 手动把摆杆拨到零点位置
-	 *   2. 看到 "Zero Set OK" → 重新注释 → 再次烧录
+	 * 零点校准（仅一次）：
+	 *   取消 SetZero 注释 → 烧录 → 手动拨摆杆到零点 → 看到 "Zero OK"
+	 *   → 重新注释 SetZero → 再次烧录
 	 * ══════════════════════════════════════════════════════════════════ */
 	// StepMotor_SetZero(1);
 	// usart_printf(USART1, "Zero Set OK\r\n");
 
-	StepMotor_Enable();                   /* 使能（阻塞 ~500ms 等应答）  */
-	StepMotor_GoHome(3000U);              /* 回零（阻塞等到位，最长 3s） */
-	StepMotor_ConfigMove(600.0f, 400.0f); /* 最大转速 600RPM，加速度 400RPM/s */
+	StepMotor_Enable();
+	StepMotor_GoHome(3000U);
+	StepMotor_ConfigMove(600.0f, 400.0f);
 
-	Buzzer_Beep(100);                     /* 短鸣 100ms = 初始化完成     */
+	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f);
+	// Set_PID(&direction_pid,  0.50f, 0.0f, 0.010f);
+	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f);
+
+	Buzzer_Beep(100);
+	usart_printf(USART1, "OmniM0 Ready\r\n");
+
+	/*
+	 * ── 任务系统按键协议 ──
+	 * KEY2 — 循环选任务 1→2→3→4→1（KEY.c 内部维护 s_task_select）
+	 * KEY1 — 启动当前选中任务（Task_Run ISR 消费）
+	 * KEY3 — 急停（Task_Run ISR 消费）
+	 */
 
 	while (1)
 	{
@@ -125,14 +139,16 @@ int main(void)
 			Buzzer_Task();
 		}
 
-		/* ── 按键轮询 @20ms（消抖在 ISR 1ms Key_Tick 完成）── */
+		/* ── 按键同步 @20ms（KEY2 选任务在此更新 s_task_select）── */
 		if (tasks.key_20ms.flag)
 		{
 			tasks.key_20ms.flag = false;
 			key_Get();
-			if (Key == 1) { Key = 0; StepMotor_SetAngle(180.0f);  }
-			if (Key == 2) { Key = 0; StepMotor_SetAngle(0.0f);    }
-			if (Key == 3) { Key = 0; StepMotor_SetAngle(-180.0f); }
+
+			/* 步进电机手动测试（调试用，注释掉避免和 Task_Run 冲突） */
+			// if (Key == 1) { Key = 0; StepMotor_SetAngle(180.0f);  }
+			// if (Key == 2) { Key = 0; StepMotor_SetAngle(0.0f);    }
+			// if (Key == 3) { Key = 0; StepMotor_SetAngle(-180.0f); }
 		}
 
 		/* ── 串口打印 50ms ── */
@@ -141,6 +157,7 @@ int main(void)
 		{
 			tasks.print_50ms.flag = false;
 			// IRLine_PrintBits(&g_irLine, USART1);
+			// GrayADC_PrintRaw(&g_graySensor, USART3);
 		}
 #endif
 
@@ -150,23 +167,27 @@ int main(void)
 		{
 			tasks.oled_100ms.flag = false;
 			OLED_Clear();
-
-			OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-			g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
-			g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
-			g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
-			g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); // 灰度8路
-
-			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-            // g_irLine.digital_bits[0], g_irLine.digital_bits[1],
-            // g_irLine.digital_bits[2], g_irLine.digital_bits[3],
-            // g_irLine.digital_bits[4], g_irLine.digital_bits[5],
-            // g_irLine.digital_bits[6], g_irLine.digital_bits[7]); // 红外8路
-
 			OLED_Printf(0,  0, OLED_6X8, "T%d", s_task_select);
 			OLED_Printf(32, 0, OLED_6X8, "%lus", Task_2_GetLapTime());
 			OLED_Printf(0, 16, OLED_6X8, "%+d", g_cam_data[0]);
 			OLED_Printf(0, 48, OLED_6X8, "L%+d R%+d", Encoder1_Speed, Encoder2_Speed);
+
+			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
+			// g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
+			// g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
+			// g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
+			// g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]);
+
+			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
+			// g_irLine.digital_bits[0], g_irLine.digital_bits[1],
+			// g_irLine.digital_bits[2], g_irLine.digital_bits[3],
+			// g_irLine.digital_bits[4], g_irLine.digital_bits[5],
+			// g_irLine.digital_bits[6], g_irLine.digital_bits[7]);
+
+			// OLED_Printf(32, 0, OLED_6X8, "Y%+d", yaw_pid.output);
+			// OLED_Printf(64, 0, OLED_6X8, "D%+d", direction_pid.output);
+			// OLED_Printf(0, 16, OLED_6X8, "R%+.1f P%+.1f", g_icm42688.roll, g_icm42688.pitch);
+			// OLED_Printf(0, 32, OLED_6X8, "Y%+.3f", g_icm42688.yaw);
 			OLED_Update();
 		}
 #endif

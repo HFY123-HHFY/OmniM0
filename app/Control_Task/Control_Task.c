@@ -10,6 +10,8 @@
 #include "G3507_Encoder.h"
 #include "API_Motor.h"
 #include "ICM42688.h"
+#include "IR_Line.h"
+#include "StepMotor.h"
 
 /* ══════════════════════════════════════════════════════════════════════
  * 全局任务管理器实例（仅管理主循环执行的低频任务）
@@ -51,6 +53,7 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     {
         tick_5ms = 0U;
         GrayADC_Task(&g_graySensor);
+	    IRLine_Task(&g_irLine);                /* 幻尔红外 串口帧解析 */
 
         ICM42688_ReadSensor();            /* ICM42688 6轴 burst读 + 偏航积分 */
         Direction_Control();              /* 灰度环PID计算输出 */
@@ -71,7 +74,7 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
         // YawTest_Control();  /* 偏航角环PID计算输出 */
         // Direction_Test_Control(); /* 灰度环PID计算输出 */
         // LineFollow_Output(); /* 速度环 + 灰度环融合输出 */
-        Task_Run();
+        // Task_Run();
 	}
 
     /* ── 4. TaskManager：任务标志位（主循环消费）── */
@@ -104,7 +107,7 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
 /*
  * Control_Task_USART_Callback — USART 中断回调
  *
- * JY61P RxPush 只做环形缓冲入队（< 1µs），数据包解析由主循环 JY61P_Task() 完成。
+ * 只做环形缓冲入队（< 1µs），数据包解析由主循环 JY61P_Task() 完成。
  * MSPM0 UART FIFO=4 字节，一次 ISR 可能读出多字节，必须循环排空。
  */
 void Control_Task_USART_Callback(API_USART_Id_t id)
@@ -118,6 +121,7 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
         usart_irq_dispatch_by_id(id, &data, &rxValid);
         if (rxValid != 0U)
         {
+            /* 摄像头数据包解析 */
             if (id == API_USART2)
             {
                 usart_Dispose_Data(USART2, &USART_DataTypeStruct, (uint8_t)data);
@@ -129,9 +133,17 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
                 }
             }
 
-            // if (id == API_USART4)
-            // {
-            // }
+            /* 步进电机数据包解析 */
+            if (id == API_USART3)
+            {
+                StepMotor_RxPush((uint8_t)data);
+            }
+
+            /* 红外循迹模块数据包解析 */
+            if (id == API_USART4)
+            {
+                IRLine_RxPush((uint8_t)data);
+            }
         }
     } while (rxValid != 0U);
 }

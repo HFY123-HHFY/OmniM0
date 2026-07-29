@@ -31,6 +31,8 @@
 #include "API_Motor.h"
 #include "ICM42688.h"
 #include "gray_adc.h"
+#include "IR_Line.h"
+#include "StepMotor.h"
 #include "MPU6050.h"
 #include "MPU6050_Int.h"
 
@@ -63,8 +65,8 @@ int main(void)
 /* 初始化层：初始化相关外设，启动硬件功能 */
 	API_USART_Init(API_USART1, 115200U); // 初始化 USART1-板载串口调试
 	API_USART_Init(API_USART2, 115200U); // 初始化 USART2 - 与K230通信
-	API_USART_Init(API_USART3, 115200U); // 初始化 USART3-无线串口调试
-	API_USART_Init(API_USART4, 115200U); // 初始化 USART4-亚博八路红外灰度
+	API_USART_Init(API_USART3, 115200U); // 初始化 USART3- 张大头步进电机/无线串口调试
+	API_USART_Init(API_USART4, 115200U); // 初始化 USART4-八路红外灰度
 	API_PWM_Init(API_PWM_TIM1, 4000U - 1U, 1U - 1U); /* TIMG7@PD1 电机A相 */
 	API_PWM_Init(API_PWM_TIM2, 4000U - 1U, 1U - 1U); /* TIMG6@PD1 电机A相 */
 	// API_PWM_Init(API_PWM_TIM3, 4000U - 1U, 1U - 1U); /* TIMA0@PD1 电机B相 */
@@ -89,9 +91,17 @@ int main(void)
 	API_Encoder_Init(API_ENCODER_1); 		/* 编码器 1 初始化 */
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
+	IRLine_Init(&g_irLine);           		/* 幻尔八路红外巡线（USART4, 非阻塞 TX） */
+	StepMotor_Init(0x01);             		/* 张大头步进电机（USART3, 地址=0x01） */
 
     API_TIM_Init(API_TIM1, 1U); /* TIMG0 1ms ISR 启动 —— 所有硬件已就绪 */
 	Buzzer_Beep(200);           /* 蜂鸣器短鸣 200ms，非阻塞（依赖 g_sys_tick_ms） */
+
+	/* ── 步进电机使能 + 运动参数配置 ── */
+	StepMotor_Enable();                        /* 使能（非阻塞，直接写寄存器） */
+	Delay_ms(20U);                             /* 给电机驱动板处理时间 */
+	StepMotor_ConfigMove(600.0f, 400.0f);      /* 最大 600RPM，加速度 400RPM/s */
+	usart_printf(USART1, "Motor ready\r\n");
 
 	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f);
 	// Set_PID(&direction_pid,  0.50f, 0.0f, 0.010f);      /* 灰度方向环：kp=2.0 ki=0.5 kd=0.1 */
@@ -101,7 +111,7 @@ int main(void)
 	{
 /* ── 蜂鸣器/LED 调度 @5ms ── */
 		if (tasks.buzzer_5ms.flag)
-		{ 
+		{
 			tasks.buzzer_5ms.flag = false;
 			Buzzer_Task();
 		}
@@ -110,7 +120,27 @@ int main(void)
 		if (tasks.key_20ms.flag)
 		{
 			tasks.key_20ms.flag = false;
-			key_Get();
+			key_Get();    /* 将按键事件同步到全局 Key 变量 */
+
+			/* ── 步进电机测试：KEY1→180°  KEY2→0°  KEY3→-180° ── */
+			if (Key == 1)
+			{
+				Key = 0;
+				StepMotor_SetAngle(180.0f);
+				usart_printf(USART1, "Motor -> 180\r\n");
+			}
+			if (Key == 2)
+			{
+				Key = 0;
+				StepMotor_SetAngle(0.0f);
+				usart_printf(USART1, "Motor -> 0\r\n");
+			}
+			if (Key == 3)
+			{
+				Key = 0;
+				StepMotor_SetAngle(-180.0f);
+				usart_printf(USART1, "Motor -> -180\r\n");
+			}
 		}
 
 /* 串口打印 50ms */
@@ -118,9 +148,10 @@ int main(void)
 		if (tasks.print_50ms.flag)
 		{
 			tasks.print_50ms.flag = false;
-			// usart_printf(USART2, "Key: %lu\r\n", Key);
+			// usart_printf(USART3, "Key: %lu\r\n", Key);
 			// usart_printf(USART1, "R:%.2f P:%.2f Y:%.2f\r\n", icmRoll, icmPitch, icmYaw);
 			// GrayADC_PrintRaw(&g_graySensor, USART3);
+			// IRLine_PrintBits(&g_irLine, USART1);
 		}
 #endif
 
@@ -132,17 +163,22 @@ int main(void)
 			OLED_Clear();
 			OLED_Printf(0,  0, OLED_6X8, "T%d", s_task_select); // 当前任务
 			OLED_Printf(32, 0, OLED_6X8, "%lus", Task_2_GetLapTime()); // 圈时
-			
+
 			OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-            g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
-            g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
-            g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
-            g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); // 灰度值
+            g_irLine.digital_bits[0], g_irLine.digital_bits[1],
+            g_irLine.digital_bits[2], g_irLine.digital_bits[3],
+            g_irLine.digital_bits[4], g_irLine.digital_bits[5],
+            g_irLine.digital_bits[6], g_irLine.digital_bits[7]); // 红外8路
+
+			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
+			// g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
+			// g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
+			// g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
+			// g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); // 灰度8路
 
 			/* 摄像头数据（USART2 接收 s<data>e） */
 			OLED_Printf(0, 16, OLED_6X8, "%+d", g_cam_data[0]);
 
-			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
 			// OLED_Printf(32, 0, OLED_6X8, "Y%+d", yaw_pid.output); // 偏航角环输出
 			// OLED_Printf(64, 0, OLED_6X8, "D%+d", direction_pid.output); // 灰度方向环输出
 			// OLED_Printf(0, 16, OLED_6X8, "R%+.1f P%+.1f", g_icm42688.roll, g_icm42688.pitch); // ICM42688 姿态角

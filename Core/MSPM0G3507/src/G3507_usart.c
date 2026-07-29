@@ -136,5 +136,20 @@ void G3507_USART_WriteByte(uint8_t usartId, uint8_t data)
 		return;
 	}
 
-	DL_UART_Main_transmitDataBlocking(map.regs, (uint8_t)data);
+	/*
+	 * 直接写 TXDATA，只等 FIFO 有空位，不等 BUSY。
+	 *
+	 * TI DriverLib 的 DL_UART_transmitDataBlocking 会在写完数据后
+	 * while(DL_UART_isBusy(uart)) 死等 BUSY 清零。
+	 * 如果某个 UART 的引脚/时钟有问题，BUSY 永远不清 → 程序卡死。
+	 *
+	 * 这里只检查 TX FIFO 未满就写入，115200bps 下每字节 ~87µs，
+	 * FIFO 深 4 字节，短帧不会溢出。
+	 */
+	while (DL_UART_isTXFIFOFull(map.regs))
+	{
+		/* 等 FIFO 有空位 */
+	}
+	DL_UART_transmitData(map.regs, (uint8_t)data);
+	/* 不等 BUSY —— 这是和 TI DriverLib 的关键区别 */
 }

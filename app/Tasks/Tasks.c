@@ -4,6 +4,7 @@
 #include "API_Motor.h"                   /* API_Motor_SetSpeed */
 #include "KEY.h"                         /* Key, s_task_select */
 #include "Control_Task/Control_Task.h"   /* NonBlockDelay_t */
+#include "StepMotor.h"                   /* StepMotor_Stop */
 
 extern volatile uint32_t g_sys_tick_ms;  /* 系统毫秒 tick，用于计时 */
 extern int16_t g_cam_data[];             /* 摄像头数据，g_cam_data[0]=小球X坐标 */
@@ -272,6 +273,7 @@ void Task_Stop(void)
     s_task2_pos    = 0U;
     s_task3_pos    = 0U;
     API_Motor_SetSpeed(0, 0);
+    StepMotor_Stop();                   /* 步进电机立即刹车（保持使能，不丢位置） */
     PID_Reset(&direction_pid);
     PID_Reset(&speed_loop.left);
     PID_Reset(&speed_loop.right);

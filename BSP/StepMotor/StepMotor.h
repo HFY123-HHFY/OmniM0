@@ -138,26 +138,6 @@ int8_t StepMotor_SetZero(uint8_t saveToFlash);
  */
 int8_t StepMotor_GoHome(uint32_t timeoutMs);
 
-/*===========================================================================
- * ⑥ ISR 接口（中断回调专用）
- *===========================================================================*/
-
-/*
- * 推入 1 字节到接收缓冲区（ISR 上半部，极快）。
- *
- * 已在 Control_Task.c 中自动路由：USART3 中断 → StepMotor_RxPush。
- * 用户代码不需要手动调用。
- */
-void StepMotor_RxPush(uint8_t data);
-
-/*
- * 处理应答帧（主循环调用，解析环形缓冲区中的响应）。
- *
- * 对于非阻塞命令（SetAngle/MoveBy/Stop），由本函数异步更新内部状态。
- * 对于查询命令（GetAngle/GetStatus），由对应的 getter 函数内部同步调用。
- */
-void StepMotor_Task(void);
-
 #ifdef __cplusplus
 }
 #endif

@@ -130,7 +130,6 @@ int main(void)
 		{
 			tasks.key_20ms.flag = false;
 			key_Get();
-
 			if (Key == 1) { Key = 0; StepMotor_SetAngle(180.0f);  }
 			if (Key == 2) { Key = 0; StepMotor_SetAngle(0.0f);    }
 			if (Key == 3) { Key = 0; StepMotor_SetAngle(-180.0f); }

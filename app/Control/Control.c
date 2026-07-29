@@ -9,9 +9,7 @@
 #include "jy61p.h"     /* JY61P_GetData（保留，ICM42688 为主力 IMU） */
 #include "ICM42688.h"  /* ICM42688_GetSnapshot — 偏航角主数据源  */
 #include "Encoder.h"   /* Encoder1_Speed / Encoder2_Speed    */
-
-/* ── 前向声明 ── */
-void Motor(void);   /* 小球轨道倾斜电机（预留，Ball_Move_Control 调用） */
+#include "StepMotor.h" /* StepMotor_SetAngle — 步进电机 PID 输出执行 */
 
 /* =========================================================================
  * PID 对象
@@ -299,27 +297,28 @@ int32_t BallPid_Calc(int16_t ball_x)
     return PID_Calc(&ball_pid, (int32_t)ball_x);
 }
 
+/* PID 输出 → 电机角度缩放因子：angle_deg = pid_output × GAIN */
+#define BALL_MOTOR_DEG_PER_OUTPUT  0.0225f  /* ±4000 → ±90° */
+
 /*
  * Ball_Move_Control — 小球位置环完整控制周期（TIMG0 ISR 20ms）。
  *
- * 内部：g_cam_data[0] → PID_Calc → ball_pid.output → Motor()。
- * Motor() 预留，当前由具体任务配置电机输出。
+ * 内部：g_cam_data[0] → BallPid_Calc → ball_pid.output → StepMotor_SetAngle。
+ *
+ * 调用链：
+ *   TIMG0 ISR 20ms → Task_Run() → Task_3() → Ball_Move_Control()
+ *     → BallPid_Calc(g_cam_data[0]) → StepMotor_SetAngle(angle)
+ *
+ * 缩放：PID 输出 ±4000 → 电机角度 ±90°（BALL_MOTOR_DEG_PER_OUTPUT）。
+ * 可根据实际机械结构调缩放因子，不需要改 PID 参数。
+ *
+ * 注意：StepMotor_SetAngle 内部发 ~14 字节 UART（~1.2ms @115200bps），
+ *       在 20ms ISR 槽中占比 ~6%，可接受。
  */
 void Ball_Move_Control(void)
 {
     BallPid_Calc(g_cam_data[0]);   /* PID 计算，结果存入 ball_pid.output */
-    Motor();                        /* 电机输出（预留，读取 ball_pid.output） */
-}
 
-/* ══════════════════════════════════════════════════════════════════════
- * 电机加载 — 小球轨道倾斜电机
- *
- * 由 Ball_Move_Control() 调用，读取 ball_pid.output 驱动电机。
- * 当前为预留空函数，待电机硬件确定后填充。
- * ══════════════════════════════════════════════════════════════════════ */
-void Motor(void)
-{
-    /* TODO: 根据 ball_pid.output 驱动轨道倾斜电机                     */
-    /* int16_t duty = (int16_t)ball_pid.output;                       */
-    /* API_Motor_SetSpeed(duty, duty);  — 或其他电机配置              */
+    float angle = (float)ball_pid.output * BALL_MOTOR_DEG_PER_OUTPUT;
+    StepMotor_SetAngle(angle);
 }

@@ -114,7 +114,7 @@ int main(void)
 
 	// StepMotor_Enable();
 	// StepMotor_GoHome(3000U);
-	// StepMotor_ConfigMove(600.0f, 400.0f);
+	// StepMotor_ConfigMove(250.0f, 200.0f);  // 最大 250RPM，加速 200RPM/s, 设置步进电机转速
 
 	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f);
 	// Set_PID(&direction_pid,  0.80f, 0.0f, 0.015f);

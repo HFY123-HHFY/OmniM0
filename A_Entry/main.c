@@ -94,8 +94,8 @@ int main(void)
 	API_Encoder_Init(API_ENCODER_1);
 	API_Encoder_Init(API_ENCODER_2);
 	PID_Control_Init();
-	IRLine_Init(&g_irLine);
-	StepMotor_Init(0x01);
+	// IRLine_Init(&g_irLine);
+	// StepMotor_Init(0x01);
 
 	/* ══════════════════════════════════════════════════════════════════
 	 * 阶段 4：启动系统时基
@@ -112,23 +112,16 @@ int main(void)
 	// StepMotor_SetZero(1);
 	// usart_printf(USART1, "Zero Set OK\r\n");
 
-	StepMotor_Enable();
-	StepMotor_GoHome(3000U);
-	StepMotor_ConfigMove(600.0f, 400.0f);
+	// StepMotor_Enable();
+	// StepMotor_GoHome(3000U);
+	// StepMotor_ConfigMove(600.0f, 400.0f);
 
 	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f);
-	// Set_PID(&direction_pid,  0.50f, 0.0f, 0.010f);
+	// Set_PID(&direction_pid,  0.80f, 0.0f, 0.015f);
 	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f);
 
 	Buzzer_Beep(100);
 	usart_printf(USART1, "OmniM0 Ready\r\n");
-
-	/*
-	 * ── 任务系统按键协议 ──
-	 * KEY2 — 循环选任务 1→2→3→4→1（KEY.c 内部维护 s_task_select）
-	 * KEY1 — 启动当前选中任务（Task_Run ISR 消费）
-	 * KEY3 — 急停（Task_Run ISR 消费）
-	 */
 
 	while (1)
 	{
@@ -172,11 +165,11 @@ int main(void)
 			OLED_Printf(0, 16, OLED_6X8, "%+d", g_cam_data[0]);
 			OLED_Printf(0, 48, OLED_6X8, "L%+d R%+d", Encoder1_Speed, Encoder2_Speed);
 
-			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-			// g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
-			// g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
-			// g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
-			// g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]);
+			OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
+			g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
+			g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
+			g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
+			g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]);
 
 			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
 			// g_irLine.digital_bits[0], g_irLine.digital_bits[1],

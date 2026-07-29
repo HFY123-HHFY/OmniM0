@@ -29,6 +29,10 @@ static uint8_t s_task2_pos    = 0U;   /* Task_2 当前位置                */
 static uint8_t s_task3_pos    = 0U;   /* Task_3/4 共用位置              */
 static uint8_t s_gen          = 0U;   /* 启动代次：每次 KEY1 启动 +1     */
 
+/* ── 反向刹车状态（Task_Run 管理，Task_Stop 设置）── */
+static int16_t s_brake_duty  = 0;      /* 刹车占空比（正数=反向）         */
+static uint8_t s_brake_ticks = 0U;     /* 刹车剩余 tick 数（20ms/次）     */
+
 uint8_t Task_IsRunning(void)  { return s_task_running; }
 uint8_t Task_GetSelect(void)  { return s_task_select; }
 uint8_t Task_GetActive(void)  { return s_task_active; }
@@ -66,8 +70,8 @@ static void Task_1(void)
 static void Task_2(void)
 {
     /* ── 起步冷却 + 终点消抖 ── */
-    enum { START_COOLDOWN = 50U,        /* 50×20ms=1s, 起跑后冷却      */
-           CONFIRM_CNT    = 5U };       /* 5×20ms=100ms 终点消抖确认   */
+    enum { START_COOLDOWN = 150U,        /* 150×20ms=3s, 起跑后冷却      */
+           CONFIRM_CNT    = 0U };       /* 5×20ms=100ms 终点消抖确认   */
 
     /* ── 状态机 ── */
     enum { STATE_FOLLOW = 0U, STATE_DONE };
@@ -87,10 +91,10 @@ static void Task_2(void)
         s_confirm    = 0U;
         s_start_tick = g_sys_tick_ms;
 
-        /* 速度环：kp=20.0, ki=170.0, kd=0, 目标=20             */
-        PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 18);
-        /* 灰度方向环：kp=2.0, ki=0.5, kd=0.1                    */
-        Set_PID(&direction_pid, 0.5f, 0.0f, 0.1f);
+        /* 速度环 */
+        PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 17.0f);
+        /* 灰度方向环 */
+        Set_PID(&direction_pid, 1.75f, 0.0f, 0.010f);
     }
 
     switch (s_state)
@@ -111,14 +115,14 @@ static void Task_2(void)
             {
                 /* 一圈完成：冻结局时 + 停车 + 复位 PID */
                 s_state = STATE_DONE;
-                Task_Stop();
+                Task_Stop(2000);               /* 反向刹车防惯性滑动 */
             }
         }
         else { s_confirm = 0U; }
         break;
 
     case STATE_DONE:
-        break;   /* 已完成，Task_Stop 已停车，s_task2_lap_time_s 已冻结 */
+        break;
     }
 }
 
@@ -239,7 +243,7 @@ static void Task_3(void)
             if (++s_confirm_cnt >= CONFIRM_TICKS)
             {
                 s_state = PHASE_DONE;
-                Task_Stop();                /* 停车 + 复位全部 PID */
+                Task_Stop(0);               /* 步进电机已控，DC 电机直接停 */
             }
             break;
 
@@ -391,17 +395,34 @@ static void Task_6(void)
 }
 
 /*
- * Task_Stop — 急停：停车 + 复位全部 PID + 清灰度标志。
- * 由 KEY3（运行中急停）或任务内部结束条件调用。
+ * Task_Stop — 急停：停车 + 复位全部 PID + 清除标志。
+ *
+ * @param brakeDuty  反向刹车占空比。
+ *                   0 = 直接停（已平滑减速的场景，如 Task_4）
+ *                   >0 = 反向刹车 200ms（10×20ms）后归零（防惯性滑动，如 Task_2）
+ *
+ * 反向刹车由 Task_Run 自动管理倒计时，任务停止后仍会继续执行直到归零。
+ * 下一次 KEY1 启动时自动取消未完成的刹车。
  */
-void Task_Stop(void)
+void Task_Stop(int16_t brakeDuty)
 {
     s_task_running = 0U;
     s_task_active  = 0U;
     s_task2_pos    = 0U;
     s_task3_pos    = 0U;
-    API_Motor_SetSpeed(0, 0);
-    StepMotor_Stop();                   /* 步进电机立即刹车（保持使能，不丢位置） */
+
+    if (brakeDuty > 0)
+    {
+        s_brake_duty  = brakeDuty;
+        s_brake_ticks = 10U;                     /* 10 × 20ms = 200ms 反向刹车 */
+        API_Motor_SetSpeed(-brakeDuty, -brakeDuty);
+    }
+    else
+    {
+        API_Motor_SetSpeed(0, 0);
+    }
+
+    StepMotor_Stop();
     PID_Reset(&direction_pid);
     PID_Reset(&speed_loop.left);
     PID_Reset(&speed_loop.right);
@@ -417,13 +438,24 @@ void Task_Stop(void)
  */
 void Task_Run(void)
 {
+    /* ── 反向刹车倒计时（任务停止后继续执行，直到归零）── */
+    if (s_brake_ticks > 0U)
+    {
+        s_brake_ticks--;
+        API_Motor_SetSpeed(-s_brake_duty, -s_brake_duty);
+        if (s_brake_ticks == 0U)
+        {
+            API_Motor_SetSpeed(0, 0);
+        }
+    }
+
     /* ── KEY3 = 急停（运行时停车 + PID 全清零）── */
     if (Key == 3U)
     {
         Key = 0U;
         if (s_task_running != 0U)
         {
-            Task_Stop();
+            Task_Stop(2000);    /* 紧急刹车：反向 2000，200ms 后归零 */
         }
     }
 
@@ -433,6 +465,8 @@ void Task_Run(void)
         Key = 0U;
         if (s_task_running == 0U)
         {
+            s_brake_ticks = 0U;              /* 取消未完成的反向刹车 */
+            API_Motor_SetSpeed(0, 0);
             s_task_running = 1U;
             s_task_active  = s_task_select;
             s_gen++;                                /* 启动代次 +1，各任务用此感知"被重启" */
@@ -454,6 +488,6 @@ void Task_Run(void)
         case 4U: Task_4(); break;
         case 5U: Task_5(); break;
         case 6U: Task_6(); break;
-        default: Task_Stop(); break;
+        default: Task_Stop(2000); break;    /* 无效任务号 → 急刹车 */
     }
 }

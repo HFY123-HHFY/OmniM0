@@ -134,16 +134,16 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
             }
 
             /* 步进电机应答 → 环形缓冲（阻塞命令从环缓取数） */
-            if (id == API_USART3)
-            {
-                StepMotor_RxPush((uint8_t)data);
-            }
+            // if (id == API_USART3)
+            // {
+            //     StepMotor_RxPush((uint8_t)data);
+            // }
 
             /* 红外循迹模块数据包解析 */
-            if (id == API_USART4)
-            {
+            // if (id == API_USART4)
+            // {
                 // IRLine_RxPush((uint8_t)data);
-            }
+            // }
         }
     } while (rxValid != 0U);
 }

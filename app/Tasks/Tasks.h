@@ -21,7 +21,13 @@ extern "C" {
  * ══════════════════════════════════════════════════════════════════════ */
 
 void Task_Run(void);
-void Task_Stop(void);           /* 急停：停车 + 复位全部 PID + 清灰度标志 */
+/*
+ * 急停：停车 + 复位全部 PID + 清除标志。
+ *
+ * @param brakeDuty  反向刹车占空比（0 = 直接停，>0 = 反向刹车 200ms 后归零）
+ *                   Task_2 用 2000（防惯性滑动），Task_3/4 用 0（已平滑减速）
+ */
+void Task_Stop(int16_t brakeDuty);
 uint8_t Task_IsRunning(void);      /* 1 = 运行中                           */
 uint8_t Task_GetSelect(void);      /* KEY2 当前选中任务号 (1-6)            */
 uint8_t Task_GetActive(void);      /* 正在运行的任务号，待机时为 0         */

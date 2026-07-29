@@ -20,18 +20,12 @@ extern "C" {
  * 启动瞬间锁存 s_task_select → s_task_active，运行中 KEY2 不影响当前任务。
  * ══════════════════════════════════════════════════════════════════════ */
 
-void    Task_Run(void);
-void    Task_Stop(void);           /* 急停：停车 + 复位全部 PID + 清灰度标志 */
+void Task_Run(void);
+void Task_Stop(void);           /* 急停：停车 + 复位全部 PID + 清灰度标志 */
 uint8_t Task_IsRunning(void);      /* 1 = 运行中                           */
-uint8_t Task_GetSelect(void);      /* KEY2 当前选中任务号 (1-4)            */
+uint8_t Task_GetSelect(void);      /* KEY2 当前选中任务号 (1-6)            */
 uint8_t Task_GetActive(void);      /* 正在运行的任务号，待机时为 0         */
-uint8_t Task_GetPos(void);         /* 当前位置：1-4 段中，5=完成           */
-
-/* ── 任务函数 ── */
-void Task_1(void);
-void Task_2(void);
-void Task_3(void);
-void Task_4(void);
+uint8_t Task_GetPos(void);         /* 当前位置：1-6 段中，7=完成           */
 
 /* ── Task_2 圈时接口（供 OLED 显示）── */
 uint32_t Task_2_GetLapTime(void);   /* 返回圈时（秒），运行中=实时，完成=冻结，其他=0 */

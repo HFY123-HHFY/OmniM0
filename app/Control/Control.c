@@ -10,6 +10,9 @@
 #include "ICM42688.h"  /* ICM42688_GetSnapshot — 偏航角主数据源  */
 #include "Encoder.h"   /* Encoder1_Speed / Encoder2_Speed    */
 
+/* ── 前向声明 ── */
+void Motor(void);   /* 小球轨道倾斜电机（预留，Ball_Move_Control 调用） */
+
 /* =========================================================================
  * PID 对象
  * ========================================================================= */
@@ -21,6 +24,9 @@ PID_TypeDef direction_pid;
 
 /* 偏航角位置环 PID */
 PID_TypeDef yaw_pid;
+
+/* 小球位置环 PID（摄像头 X 坐标 → 电机控制） */
+PID_TypeDef ball_pid;
 
 /* 灰度传感器实例（Control.h 中 extern，供 Control_Task / main 引用） */
 GrayADC_Sensor_t g_graySensor;
@@ -46,6 +52,9 @@ void PID_Control_Init(void)
 
     /* ── 偏航角环结构 ── */
     YawPid_Init();
+
+    /* ── 小球位置环结构 ── */
+    BallPid_Init();
 }
 
 /*
@@ -257,4 +266,60 @@ void YawTest_Control(void)
     int16_t right = -(int16_t)steer;
     MotorOutput_Clamp(&left, &right);
     API_Motor_SetSpeed(left, right);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+ * 小球位置环 — 摄像头 X 坐标 → 位置 PID → 电机
+ *
+ * 物理背景：半圆弧轨道，X 轴坐标 -12 ~ +12。
+ * 摄像头识别小球 X 位置写入 g_cam_data[0]，PID 输出控制电机倾斜轨道。
+ *
+ * BallPid_Init   — 结构体初始化（20ms 采样周期，±4000 输出上限）
+ * BallPid_Calc   — 给定当前 X 坐标，返回 PID 输出（natural units）
+ * Ball_Move_Control — 完整控制周期：读取 g_cam_data[0] → PID → Motor()
+ * ══════════════════════════════════════════════════════════════════════ */
+
+void BallPid_Init(void)
+{
+    PID_Init(&ball_pid);
+    PID_Init_WithLimit(&ball_pid, 500, API_MOTOR_MAX_DUTY);  /* I_max=500, Out_max=4000 */
+    PID_SetSampleTime(&ball_pid, 20);                         /* 20ms，和 ISR 任务周期一致 */
+    PID_SetDeadband(&ball_pid, 1);                            /* ±1 单位死区，摄像头分辨率级 */
+}
+
+/* BallPid_SetTarget — 设置小球位置环目标 X 坐标 */
+void BallPid_SetTarget(int32_t target_x)
+{
+    PID_SetTarget(&ball_pid, target_x);
+}
+
+/* BallPid_Calc — 计算小球位置环 PID 输出 */
+int32_t BallPid_Calc(int16_t ball_x)
+{
+    return PID_Calc(&ball_pid, (int32_t)ball_x);
+}
+
+/*
+ * Ball_Move_Control — 小球位置环完整控制周期（TIMG0 ISR 20ms）。
+ *
+ * 内部：g_cam_data[0] → PID_Calc → ball_pid.output → Motor()。
+ * Motor() 预留，当前由具体任务配置电机输出。
+ */
+void Ball_Move_Control(void)
+{
+    BallPid_Calc(g_cam_data[0]);   /* PID 计算，结果存入 ball_pid.output */
+    Motor();                        /* 电机输出（预留，读取 ball_pid.output） */
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+ * 电机加载 — 小球轨道倾斜电机
+ *
+ * 由 Ball_Move_Control() 调用，读取 ball_pid.output 驱动电机。
+ * 当前为预留空函数，待电机硬件确定后填充。
+ * ══════════════════════════════════════════════════════════════════════ */
+void Motor(void)
+{
+    /* TODO: 根据 ball_pid.output 驱动轨道倾斜电机                     */
+    /* int16_t duty = (int16_t)ball_pid.output;                       */
+    /* API_Motor_SetSpeed(duty, duty);  — 或其他电机配置              */
 }

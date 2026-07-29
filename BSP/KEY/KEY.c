@@ -205,7 +205,7 @@ void key_Get(void)
 	else if (KeyNum == 2U)
 	{
 		s_task_select++;
-		if (s_task_select > 4U) { s_task_select = 1U; }
+		if (s_task_select > 6U) { s_task_select = 1U; }
 		Key = 2U;
 	}
 	else if (KeyNum == 3U)

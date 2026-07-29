@@ -6,6 +6,7 @@
 #include "Control_Task/Control_Task.h"   /* NonBlockDelay_t */
 
 extern volatile uint32_t g_sys_tick_ms;  /* 系统毫秒 tick，用于计时 */
+extern int16_t g_cam_data[];             /* 摄像头数据，g_cam_data[0]=小球X坐标 */
 
 /* ══════════════════════════════════════════════════════════════════════
  * 任务链调度框架
@@ -39,6 +40,226 @@ uint8_t Task_GetPos(void)
 static uint32_t s_task2_lap_time_s = 0U;
 
 uint32_t Task_2_GetLapTime(void) { return s_task2_lap_time_s; }
+
+/* ══════════════════════════════════════════════════════════════════════
+ * 任务实现
+ * ══════════════════════════════════════════════════════════════════════ */
+
+static void Task_1(void)
+{
+
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+ * Task_2 — 速度环 + 灰度循迹环，顺时针循圆圈黑线跑一圈并计时
+ *
+ * 终点检测：g_graySensor.digital_bits[2] 和 [5] 同时见黑（== 0）。
+ *   圆圈地图上起跑线横穿赛道，跑完一圈回到起点时触发。
+ *
+ * 计时器：KEY1 启动瞬间开始计时（秒），检测到终点停止。
+ *   圈时通过 Task_2_GetLapTime() 读取，供 OLED 显示。
+ *
+ * 调用频率：TIMG0 ISR 20ms（由 Task_Run 分发）。
+ * ══════════════════════════════════════════════════════════════════════ */
+static void Task_2(void)
+{
+    /* ── 起步冷却 + 终点消抖 ── */
+    enum { START_COOLDOWN = 50U,        /* 50×20ms=1s, 起跑后冷却      */
+           CONFIRM_CNT    = 5U };       /* 5×20ms=100ms 终点消抖确认   */
+
+    /* ── 状态机 ── */
+    enum { STATE_FOLLOW = 0U, STATE_DONE };
+
+    static uint8_t  s_state      = STATE_FOLLOW;
+    static uint8_t  s_last_gen   = 0U;
+    static uint8_t  s_cooldown   = 0U;
+    static uint8_t  s_confirm    = 0U;
+    static uint32_t s_start_tick = 0U;   /* 起跑时刻 tick             */
+
+    /* ── 首次启动 / KEY1 重新启动 ── */
+    if (s_last_gen != s_gen)
+    {
+        s_last_gen   = s_gen;
+        s_state      = STATE_FOLLOW;
+        s_cooldown   = (uint8_t)START_COOLDOWN;
+        s_confirm    = 0U;
+        s_start_tick = g_sys_tick_ms;
+
+        /* 速度环：kp=20.0, ki=170.0, kd=0, 目标=20             */
+        PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 18);
+        /* 灰度方向环：kp=2.0, ki=0.5, kd=0.1                    */
+        Set_PID(&direction_pid, 0.5f, 0.0f, 0.1f);
+    }
+
+    switch (s_state)
+    {
+    case STATE_FOLLOW:
+        LineFollow_Output();
+
+        /* 每周期更新圈时到外部只读变量（OLED 显示用）*/
+        s_task2_lap_time_s = (g_sys_tick_ms - s_start_tick) / 1000U;
+
+        /* 起步冷却递减，防止起跑线被误判为终点 */
+        if (s_cooldown > 0U) { s_cooldown--; }
+        /* 冷却期过后才检测终点：sensor[2] 和 [5] 同时见黑 */
+        else if (g_graySensor.digital_bits[2] == 0U &&
+                 g_graySensor.digital_bits[5] == 0U)
+        {
+            if (++s_confirm >= CONFIRM_CNT)
+            {
+                /* 一圈完成：冻结局时 + 停车 + 复位 PID */
+                s_state = STATE_DONE;
+                Task_Stop();
+            }
+        }
+        else { s_confirm = 0U; }
+        break;
+
+    case STATE_DONE:
+        break;   /* 已完成，Task_Stop 已停车，s_task2_lap_time_s 已冻结 */
+    }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+ * Task_3 — 小球位置控制：0 → +5 → -5
+ *
+ * 摄像头识别小球 X 轴位置（g_cam_data[0]），位置 PID 控制轨道倾斜电机，
+ * 使小球沿半圆弧轨道移动到指定坐标并稳定。
+ *
+ * 阶段：
+ *   PHASE_TO_P5      — 0 → +5，PID 跟踪直到到达阈值内
+ *   PHASE_CONFIRM_P5  — 在 +5 处稳定确认（消抖）
+ *   PHASE_TO_N5       — +5 → -5，切换目标到 -5
+ *   PHASE_CONFIRM_N5  — 在 -5 处稳定确认
+ *   PHASE_DONE        — 完成，停车
+ *
+ * 调用频率：TIMG0 ISR 20ms（由 Task_Run 分发）。
+ * ══════════════════════════════════════════════════════════════════════ */
+static void Task_3(void)
+{
+    /* ── 状态机枚举 ── */
+    enum {
+        PHASE_TO_P5 = 0U,
+        PHASE_CONFIRM_P5,
+        PHASE_TO_N5,
+        PHASE_CONFIRM_N5,
+        PHASE_DONE
+    };
+
+    /* ── 阈值常量 ── */
+    enum {
+        STABLE_THRESHOLD = 1,       /* 到达判定：|error| ≤ 1（摄像头分辨率级） */
+        CONFIRM_TICKS    = 25U      /* 稳定确认：25×20ms = 500ms            */
+    };
+
+    /* ── 静态状态变量（由 s_gen 感知重启）── */
+    static uint8_t  s_state       = PHASE_TO_P5;
+    static uint8_t  s_last_gen    = 0U;
+    static uint8_t  s_confirm_cnt = 0U;
+
+    /* ── 首次启动 / KEY1 重新启动 ── */
+    if (s_last_gen != s_gen)
+    {
+        s_last_gen    = s_gen;
+        s_state       = PHASE_TO_P5;
+        s_confirm_cnt = 0U;
+
+        /* 小球位置环结构已由 PID_Control_Init 初始化，这里只需设参数 */
+        /* kp=400: 误差 5 单位 → 2000 duty；ki=20: 慢速消静差；kd=15: 阻尼 */
+        Set_PID(&ball_pid, 400.0f, 20.0f, 15.0f);
+        BallPid_SetTarget(5);           /* 第一阶段目标：X = +5 */
+    }
+
+    switch (s_state)
+    {
+        case PHASE_TO_P5:
+            Ball_Move_Control();
+
+            /* 判断是否到达 +5 */
+            {
+                int16_t error = (int16_t)((int32_t)g_cam_data[0] - 5);
+                if (error < 0) error = (int16_t)(-error);   /* abs(error) */
+
+                if (error <= (int16_t)STABLE_THRESHOLD)
+                {
+                    if (++s_confirm_cnt >= CONFIRM_TICKS)
+                    {
+                        s_confirm_cnt = 0U;
+                        s_state       = PHASE_CONFIRM_P5;
+                    }
+                }
+                else
+                {
+                    s_confirm_cnt = 0U;   /* 离开阈值则重置消抖计数 */
+                }
+            }
+            break;
+
+        case PHASE_CONFIRM_P5:
+            /* 在 +5 稳定后短暂保持（给一次确认周期），然后切目标 */
+            Ball_Move_Control();
+
+            if (++s_confirm_cnt >= CONFIRM_TICKS)
+            {
+                s_confirm_cnt = 0U;
+                BallPid_SetTarget(-5);      /* 切换目标：X = -5 */
+                s_state = PHASE_TO_N5;
+            }
+            break;
+
+        case PHASE_TO_N5:
+            Ball_Move_Control();
+
+            /* 判断是否到达 -5 */
+            {
+                int16_t error = (int16_t)((int32_t)g_cam_data[0] - (-5));
+                if (error < 0) error = (int16_t)(-error);
+
+                if (error <= (int16_t)STABLE_THRESHOLD)
+                {
+                    if (++s_confirm_cnt >= CONFIRM_TICKS)
+                    {
+                        s_confirm_cnt = 0U;
+                        s_state       = PHASE_CONFIRM_N5;
+                    }
+                }
+                else
+                {
+                    s_confirm_cnt = 0U;
+                }
+            }
+            break;
+
+        case PHASE_CONFIRM_N5:
+            /* 在 -5 稳定确认后完成任务 */
+            Ball_Move_Control();
+
+            if (++s_confirm_cnt >= CONFIRM_TICKS)
+            {
+                s_state = PHASE_DONE;
+                Task_Stop();                /* 停车 + 复位全部 PID */
+            }
+            break;
+
+        case PHASE_DONE:
+            break;   /* 已完成，Task_Stop 已停车 */
+    }
+}
+
+static void Task_4(void)
+{
+
+}
+
+static void Task_5(void)
+{
+
+}
+
+static void Task_6(void)
+{
+
+}
 
 /*
  * Task_Stop — 急停：停车 + 复位全部 PID + 清灰度标志。
@@ -101,95 +322,8 @@ void Task_Run(void)
         case 2U: Task_2(); break;
         case 3U: Task_3(); break;
         case 4U: Task_4(); break;
+        case 5U: Task_5(); break;
+        case 6U: Task_6(); break;
         default: Task_Stop(); break;
     }
-}
-
-/* ══════════════════════════════════════════════════════════════════════
- * 任务实现
- * ══════════════════════════════════════════════════════════════════════ */
-
-void Task_1(void)
-{
-
-}
-
-/* ══════════════════════════════════════════════════════════════════════
- * Task_2 — 速度环 + 灰度循迹环，顺时针循圆圈黑线跑一圈并计时
- *
- * 终点检测：g_graySensor.digital_bits[2] 和 [5] 同时见黑（== 0）。
- *   圆圈地图上起跑线横穿赛道，跑完一圈回到起点时触发。
- *
- * 计时器：KEY1 启动瞬间开始计时（秒），检测到终点停止。
- *   圈时通过 Task_2_GetLapTime() 读取，供 OLED 显示。
- *
- * 调用频率：TIMG0 ISR 20ms（由 Task_Run 分发）。
- * ══════════════════════════════════════════════════════════════════════ */
-void Task_2(void)
-{
-    /* ── 起步冷却 + 终点消抖 ── */
-    enum { START_COOLDOWN = 50U,        /* 50×20ms=1s, 起跑后冷却      */
-           CONFIRM_CNT    = 5U };       /* 5×20ms=100ms 终点消抖确认   */
-
-    /* ── 状态机 ── */
-    enum { STATE_FOLLOW = 0U, STATE_DONE };
-
-    static uint8_t  s_state      = STATE_FOLLOW;
-    static uint8_t  s_last_gen   = 0U;
-    static uint8_t  s_cooldown   = 0U;
-    static uint8_t  s_confirm    = 0U;
-    static uint32_t s_start_tick = 0U;   /* 起跑时刻 tick             */
-
-    /* ── 首次启动 / KEY1 重新启动 ── */
-    if (s_last_gen != s_gen)
-    {
-        s_last_gen   = s_gen;
-        s_state      = STATE_FOLLOW;
-        s_cooldown   = (uint8_t)START_COOLDOWN;
-        s_confirm    = 0U;
-        s_start_tick = g_sys_tick_ms;
-
-        /* 速度环：kp=20.0, ki=170.0, kd=0, 目标=20             */
-        PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 18);
-        /* 灰度方向环：kp=2.0, ki=0.5, kd=0.1                    */
-        Set_PID(&direction_pid, 0.5f, 0.0f, 0.1f);
-    }
-
-    switch (s_state)
-    {
-    case STATE_FOLLOW:
-        LineFollow_Output();
-
-        /* 每周期更新圈时到外部只读变量（OLED 显示用）*/
-        s_task2_lap_time_s = (g_sys_tick_ms - s_start_tick) / 1000U;
-
-        /* 起步冷却递减，防止起跑线被误判为终点 */
-        if (s_cooldown > 0U) { s_cooldown--; }
-        /* 冷却期过后才检测终点：sensor[2] 和 [5] 同时见黑 */
-        else if (g_graySensor.digital_bits[2] == 0U &&
-                 g_graySensor.digital_bits[5] == 0U)
-        {
-            if (++s_confirm >= CONFIRM_CNT)
-            {
-                /* 一圈完成：冻结局时 + 停车 + 复位 PID */
-                s_state = STATE_DONE;
-                Task_Stop();
-            }
-        }
-        else { s_confirm = 0U; }
-        break;
-
-    case STATE_DONE:
-        break;   /* 已完成，Task_Stop 已停车，s_task2_lap_time_s 已冻结 */
-    }
-}
-
-void Task_3(void)
-{
-
-}
-
-void Task_4(void)
-{
-
 }

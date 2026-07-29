@@ -28,6 +28,7 @@ extern volatile uint8_t s_task_select;
 
 /* ── PID 对象 ── */
 extern PID_TypeDef yaw_pid;             /* 偏航角位置环 PID */
+extern PID_TypeDef ball_pid;            /* 小球位置环 PID（X 坐标） */
 
 /* PID 初始化（速度环 + 方向环 + 偏航角环） */
 void PID_Control_Init(void);
@@ -37,6 +38,19 @@ void YawPid_Set(float kp, float ki, float kd, float target_deg);  /* 四合一�
 void YawPid_SetTarget(float degrees);   /* 单独设置目标偏航角（度）             */
 int32_t YawPid_Calc(float yaw_degrees); /* 计算偏航角 PID 输出（度，直接传 jy->yaw）*/
 void YawTest_Control(void);             /* 偏航角单独测试（纯差速，绕过速度环）  */
+
+/*
+ * 小球位置环 — 摄像头 X 坐标 → 位置 PID → Motor()
+ *
+ * BallPid_Init:     初始化 PID 结构体（限制、死区、采样周期）
+ * BallPid_SetTarget:设置目标 X 坐标（自然单位，和 g_cam_data[0] 同量纲）
+ * BallPid_Calc:     给定当前 X 坐标，计算 PID 输出（存入 ball_pid.output）
+ * Ball_Move_Control:完整控制周期 — 读 g_cam_data[0] → PID 计算 → Motor()
+ */
+void BallPid_Init(void);
+void BallPid_SetTarget(int32_t target_x);
+int32_t BallPid_Calc(int16_t ball_x);
+void Ball_Move_Control(void);
 
 /*
  * 方向环控制（TIMG0 ISR 中 5ms 调用一次）。

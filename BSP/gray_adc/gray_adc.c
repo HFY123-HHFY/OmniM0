@@ -16,8 +16,14 @@
 #include "gpio.h"     /* API_GPIO_InitOutput / API_GPIO_Write */
 #include "adc.h"      /* API_ADC_GetValue */
 #include "My_Usart/My_Usart.h"  /* usart_printf / USART1/USART2 宏 */
-#include "Control/Control.h"    /* g_graySensor */
 #include <stdio.h>    /* sprintf */
+
+/*
+ * 注意：GrayADC 已从主工程中停用（替换为亚博红外 yabo_ir）。
+ * 以下声明仅用于 gray_adc.c 内部编译通过，
+ * 运行时不调用 GrayADC_Init/Task，链接器 --gc-sections 自动移除。
+ */
+extern GrayADC_Sensor_t g_graySensor;
 
 /*===========================================================================
  * 默认校准值（来自 gray_adc.h 宏定义）

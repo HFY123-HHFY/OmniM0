@@ -25,8 +25,8 @@ PID_TypeDef yaw_pid;
 /* 灰度传感器实例（Control.h 中 extern，供 Control_Task / main 引用） */
 GrayADC_Sensor_t g_graySensor;
 
-/* 亚博八路红外传感器实例 — 替代 gray_adc 用于 PID 方向环 */
-YaboIR_Sensor_t g_yaboIR;
+/* 亚博红外传感器实例 — 当前切回感为灰度，暂时注释 */
+// YaboIR_Sensor_t g_yaboIR;
 
 /*
  * PID_Control_Init — 速度环 + 方向环 + 偏航角环结构初始化。
@@ -136,21 +136,20 @@ static int32_t g_steer = 0;
  * ========================================================================= */
 void Direction_Control(void)
 {
-    /* ── 使用亚博红外巡线模块（替换原 GrayADC）── */
-    int32_t pos    = YaboIR_LinePosition(&g_yaboIR);
-    int32_t center = (int32_t)(7U * YABO_IR_SENSOR_SPACING_MM * 100U / 2U);
+    int32_t pos    = GrayADC_LinePosition(&g_graySensor);
+    int32_t center = (int32_t)(7U * GRAY_ADC_SENSOR_SPACING_MM * 100U / 2U);
 
     if (pos < 0)
     {
-        return; /* 传感器未收到数据/丢线，保持上一拍 steer */
+        return; /* 传感器未校准/丢线，保持上一拍 steer */
     }
 
     PID_SetTarget(&direction_pid, center);
     g_steer = -PID_Calc(&direction_pid, pos);  /* PID_Calc 返回 int32_t */
 
-    /* ── 原 GrayADC 版本（保留参考）──
-    int32_t pos    = GrayADC_LinePosition(&g_graySensor);
-    int32_t center = (int32_t)(7U * GRAY_ADC_SENSOR_SPACING_MM * 100U / 2U);
+    /* ── 亚博红外版本（保留备用）──
+    int32_t pos    = YaboIR_LinePosition(&g_yaboIR);
+    int32_t center = (int32_t)(7U * YABO_IR_SENSOR_SPACING_MM * 100U / 2U);
     if (pos < 0) { return; }
     PID_SetTarget(&direction_pid, center);
     g_steer = -PID_Calc(&direction_pid, pos);

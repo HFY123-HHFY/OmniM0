@@ -70,15 +70,6 @@ typedef struct
 void YaboIR_Init(YaboIR_Sensor_t *sensor);
 
 /*
- * 向模块发送初始化命令 "$0,0,1#"（仅数字量输出模式）。
- *
- * 调用时机：USART4 已初始化、TIMG0 启动之前（main.c Init 阶段）。
- * 会阻塞约 300µs（6 字节 @115200bps ≈ 520µs + TX FIFO 排空）。
- * 发送完成后模块立即开始持续上报 "$D,...#" 帧。
- */
-void YaboIR_SendCmd(void);
-
-/*
  * 推入 1 字节到环形缓冲（中断上半部，USART4 ISR 调用）。
  *
  * 操作极轻：数组写入 + 索引自增，< 1µs @80MHz。

@@ -4,14 +4,13 @@
 #include "usart.h"
 #include "My_Usart/My_Usart.h"
 #include "Control/Control.h"
-#include "Tasks/Tasks.h"    /* Task_Run */
+#include "Tasks/Tasks.h"
 #include "KEY.h"
 #include "Encoder.h"
 #include "G3507_Encoder.h"
-#include "gray_adc.h"
 #include "API_Motor.h"
 #include "ICM42688.h"
-#include "yabo_ir.h"
+// #include "yabo_ir.h"    /* 亚博红外（当前切回感为灰度） */
 
 /* ══════════════════════════════════════════════════════════════════════
  * 全局任务管理器实例（仅管理主循环执行的低频任务）
@@ -54,12 +53,11 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     if (tick_5ms >= 5U)
     {
         tick_5ms = 0U;
+        GrayADC_Task(&g_graySensor);
+        // YaboIR_Task(&g_yaboIR);        /* 亚博红外 串口帧解析 */
 
-        // GrayADC_Task(&g_graySensor);
-        YaboIR_Task(&g_yaboIR);                      /* 亚博红外 串口帧解析 */
-
-		ICM42688_ReadSensor();  /* ICM42688 6轴 burst读 + 偏航积分 */
-        Direction_Control(); /* 灰度环PID计算输出 */
+		ICM42688_ReadSensor();            /* ICM42688 6轴 burst读 + 偏航积分 */
+        Direction_Control();              /* 灰度环PID计算输出 */
     }
 
     /* ── 3. 控制 @20ms：编码器快照 + 任务调度 ── */
@@ -122,10 +120,13 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
         usart_irq_dispatch_by_id(id, &data, &rxValid);
         if (rxValid != 0U)
         {
-            if (id == API_USART4)
-            {
-                YaboIR_RxPush((uint8_t)data);
-            }
+
+            
+
+            // if (id == API_USART4)
+            // {
+            //     YaboIR_RxPush((uint8_t)data);
+            // }
         }
     } while (rxValid != 0U);
 }

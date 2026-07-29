@@ -267,31 +267,18 @@ void YaboIR_Init(YaboIR_Sensor_t *sensor)
     {
         s_rx_buf[j] = 0U;
     }
-}
 
-/*===========================================================================
- * YaboIR_SendCmd — 向模块发送初始化命令
- *
- * 命令格式：$0,0,1#
- *   字段 1 = 0  → 不进入校准模式
- *   字段 2 = 0  → 不发送模拟量数据
- *   字段 3 = 1  → 发送数字量数据
- *
- * 调用时机：USART4 已初始化后，TIMG0 启动前。
- * 发送后模块立刻开始持续上报 "$D,x1:0,...#" 帧。
- *
- * 使用 API_USART_WriteByte 直接字节发送（阻塞 TX FIFO 模式），
- * 不在 ISR 上下文，无异步竞争。
- *===========================================================================*/
-
-void YaboIR_SendCmd(void)
-{
-    const char *cmd = "$0,0,1#";
-    uint8_t     i;
-
-    for (i = 0U; cmd[i] != '\0'; i++)
+    /*
+     * 向模块发送初始化命令 $0,0,1#（仅数字量输出）。
+     * USART4 已由 main.c 初始化，直接字节发送。
+     * 发送后模块立即开始持续上报 "$D,x1:0,...#" 帧。
+     */
     {
-        API_USART_WriteByte(API_USART4, (uint8_t)cmd[i]);
+        const char *cmd = "$0,0,1#";
+        for (j = 0U; cmd[j] != '\0'; j++)
+        {
+            API_USART_WriteByte(API_USART4, (uint8_t)cmd[j]);
+        }
     }
 }
 

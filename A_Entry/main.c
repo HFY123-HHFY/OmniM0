@@ -33,7 +33,7 @@
 #include "gray_adc.h"
 #include "MPU6050.h"
 #include "MPU6050_Int.h"
-#include "yabo_ir.h"
+// #include "yabo_ir.h"
 
 /* ── 调试开关 ── */
 #define DEBUG_PRINT_ENABLE  1U   /* 开启/关闭串口 printf 调试输出 */
@@ -91,9 +91,8 @@ int main(void)
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
 
-    /* 亚博红外巡线模块 — USART4 已初始化，发送命令启动数字量上报 */
-    YaboIR_Init(&g_yaboIR);
-    YaboIR_SendCmd();
+    /* 亚博红外巡线模块 — 结构体初始化 + 清缓冲 + 发送 $0,0,1# */
+    // YaboIR_Init(&g_yaboIR);
 
     API_TIM_Init(API_TIM1, 1U); /* TIMG0 1ms ISR 启动 —— 所有硬件已就绪 */
 	Buzzer_Beep(200);           /* 蜂鸣器短鸣 200ms，非阻塞（依赖 g_sys_tick_ms） */
@@ -123,7 +122,7 @@ int main(void)
 		if (tasks.print_50ms.flag)
 		{
 			tasks.print_50ms.flag = false;
-			YaboIR_PrintBits(&g_yaboIR, USART1);
+			// YaboIR_PrintBits(&g_yaboIR, USART1);    /* 亚博红外（当前切回感为灰度） */
 			// usart_printf(USART1, "R:%.2f P:%.2f Y:%.2f\r\n", icmRoll, icmPitch, icmYaw);
 			// GrayADC_PrintRaw(&g_graySensor, USART3);
 		}
@@ -138,11 +137,17 @@ int main(void)
 			OLED_Printf(0,  0, OLED_6X8, "T%d", s_task_select); // 当前任务
 			OLED_Printf(32, 0, OLED_6X8, "%lus", Task_2_GetLapTime()); // 圈时
 			
+			OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
+            g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
+            g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
+            g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
+            g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); // 灰度值
+
 			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-			// g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
-			// g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
-			// g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
-			// g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); // 灰度值
+			// g_yaboIR.digital_bits[0], g_yaboIR.digital_bits[1],
+			// g_yaboIR.digital_bits[2], g_yaboIR.digital_bits[3],
+			// g_yaboIR.digital_bits[4], g_yaboIR.digital_bits[5],
+			// g_yaboIR.digital_bits[6], g_yaboIR.digital_bits[7]); // 红外8路
 			// OLED_Printf(32, 0, OLED_6X8, "Y%+d", yaw_pid.output); // 偏航角环输出
 			// OLED_Printf(64, 0, OLED_6X8, "D%+d", direction_pid.output); // 灰度方向环输出
 			// OLED_Printf(0, 16, OLED_6X8, "R%+.1f P%+.1f", g_icm42688.roll, g_icm42688.pitch); // ICM42688 姿态角

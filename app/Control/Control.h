@@ -6,7 +6,6 @@
 #include "PID/PID.h"
 #include "Filter/Filter.h"
 #include "gray_adc.h"
-// #include "yabo_ir.h"    /* 亚博红外（当前切回感为灰度） */
 #include "LED.h"     /* LED_Id_t for Buzzer_Light */
 
 #ifdef __cplusplus
@@ -23,7 +22,6 @@ extern PID_TypeDef direction_pid;
 extern GrayADC_Sensor_t g_graySensor;
 
 /* 亚博红外传感器实例 — 当前切回感为灰度，暂时注释 */
-// extern YaboIR_Sensor_t g_yaboIR;
 
 /* 任务选择（KEY.c 定义，KEY2 循环 1→4） */
 extern volatile uint8_t s_task_select;

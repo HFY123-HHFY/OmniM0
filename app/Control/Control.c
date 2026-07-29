@@ -26,7 +26,6 @@ PID_TypeDef yaw_pid;
 GrayADC_Sensor_t g_graySensor;
 
 /* 亚博红外传感器实例 — 当前切回感为灰度，暂时注释 */
-// YaboIR_Sensor_t g_yaboIR;
 
 /*
  * PID_Control_Init — 速度环 + 方向环 + 偏航角环结构初始化。
@@ -147,14 +146,7 @@ void Direction_Control(void)
     PID_SetTarget(&direction_pid, center);
     g_steer = -PID_Calc(&direction_pid, pos);  /* PID_Calc 返回 int32_t */
 
-    /* ── 亚博红外版本（保留备用）──
-    int32_t pos    = YaboIR_LinePosition(&g_yaboIR);
-    int32_t center = (int32_t)(7U * YABO_IR_SENSOR_SPACING_MM * 100U / 2U);
-    if (pos < 0) { return; }
-    PID_SetTarget(&direction_pid, center);
-    g_steer = -PID_Calc(&direction_pid, pos);
-    ── */
-}
+    }
 
 /* =========================================================================
  * MotorOutput_Clamp — 电机输出限幅到 API_MOTOR_MAX_DUTY (±4000)

@@ -257,39 +257,39 @@ static void Task_3(void)
  *
  * 小车方面：
  *   A 点出发，灰度循迹 + 速度环控制，监控 ICM42688 偏航角。
- *   当偏航角变化超过 TASK4_CORNER_YAW_DEG 时，认为到达地图曲线拐角
- *   处 B 点 → 平滑减速停车 → 复位循迹 PID。
+ *   起步冷却期内不检测偏航角（防起跑误触发）。
+ *   冷却期过后，当偏航角 ≤ TASK4_CORNER_YAW_DEG 时（直走≈0°，
+ *   拐到 B 点≈-90°），认为到达曲线拐角 → 平滑减速 → 直行通过 B → 停车。
  *
  * 摆杆方面：
- *   从 A 到 B 全过程，小球位置环始终控制步进电机，将小球稳定在
- *   坐标 X=0（误差 ±1 单位）。小车停车后继续维持。
+ *   全过程小球位置环始终控制步进电机，将小球稳定在 X=0。
  *
  * 调用频率：TIMG0 ISR 20ms（由 Task_Run 分发）。
  * ══════════════════════════════════════════════════════════════════════ */
 
-/* 偏航角变化阈值（°）—— 超过此值认为小车已到达曲线拐角 B 点 */
-#define TASK4_CORNER_YAW_DEG      90.0f
-
-/* 巡航目标速度（编码器单位/20ms，Task_2 用 18，这里更慢以兼顾小球稳定） */
-#define TASK4_CRUISE_SPEED        10
-
-/* 平滑减速参数 */
-#define TASK4_DECEL_STEPS         25U     /* 减速步数（25×20ms = 500ms）  */
+/* ── 可调参数 ── */
+#define TASK4_START_COOLDOWN      150U    /* 起步冷却（150×20ms=3s，防起跑误触发） */
+#define TASK4_CORNER_YAW_DEG      -80.0f  /* 偏航角阈值（°），≤此值=到达B点拐角    */
+#define TASK4_CRUISE_SPEED        10      /* 巡航速度（编码器单位）                  */
+#define TASK4_DECEL_STEPS         25U     /* 减速步数（25×20ms=500ms 平滑减速）     */
+#define TASK4_PASS_TICKS          50U     /* 通过B点延时（50×20ms=1s，确保车尾过B） */
 
 static void Task_4(void)
 {
     /* ── 状态机 ── */
     enum {
-        STATE_CRUISE = 0U,     /* 循迹巡航，监控偏航角                 */
-        STATE_DECEL,           /* 检测到拐角，平滑减速                 */
-        STATE_DONE             /* 已停车，复位循迹 PID，小球继续控制   */
+        STATE_CRUISE = 0U,     /* 循迹巡航 + 起步冷却 + 监控偏航角       */
+        STATE_DECEL,           /* 检测到拐角 → 平滑减速                  */
+        STATE_PASS,            /* 减速完成 → 直行延时，确保车尾通过 B 点  */
+        STATE_DONE             /* 通过 B 点，停车，小球继续控制           */
     };
 
     /* ── 静态变量（s_gen 感知 KEY1 重新启动）── */
     static uint8_t  s_state       = STATE_CRUISE;
     static uint8_t  s_last_gen    = 0U;
     static uint8_t  s_decel_step  = 0U;
-    static float    s_yaw_start   = 0.0f;
+    static uint8_t  s_pass_tick   = 0U;
+    static uint8_t  s_cooldown    = 0U;
 
     /* ── 首次启动 / KEY1 重新启动 ── */
     if (s_last_gen != s_gen)
@@ -297,13 +297,8 @@ static void Task_4(void)
         s_last_gen   = s_gen;
         s_state      = STATE_CRUISE;
         s_decel_step = 0U;
-
-        /* 记录启动时的偏航角作为基准（检测相对变化） */
-        {
-            ICM42688_Data_t snap;
-            ICM42688_GetSnapshot(&snap);
-            s_yaw_start = snap.yaw;
-        }
+        s_pass_tick  = 0U;
+        s_cooldown   = (uint8_t)TASK4_START_COOLDOWN;
 
         /* ── 小车：低速巡航循迹 ── */
         PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, TASK4_CRUISE_SPEED);
@@ -320,12 +315,10 @@ static void Task_4(void)
     Ball_Move_Control();
 
     /* ════════════════════════════════════════════════════════════════
-     * 读取当前偏航角，计算相对变化
+     * 读取当前偏航角（ICM42688 上电归零，直走≈0°，拐弯≈-90°）
      * ════════════════════════════════════════════════════════════════ */
     ICM42688_Data_t snap;
     ICM42688_GetSnapshot(&snap);
-    float delta_yaw = snap.yaw - s_yaw_start;
-    float abs_delta = (delta_yaw < 0.0f) ? -delta_yaw : delta_yaw;
 
     /* ════════════════════════════════════════════════════════════════
      * 小车状态机
@@ -336,8 +329,10 @@ static void Task_4(void)
         /* 灰度循迹 + 速度环 */
         LineFollow_Output();
 
-        /* 偏航角变化超过阈值 → 到达 B 点拐角，开始减速 */
-        if (abs_delta >= TASK4_CORNER_YAW_DEG)
+        /* 起步冷却递减（防起跑误触发偏航角检测） */
+        if (s_cooldown > 0U) { s_cooldown--; }
+        /* 冷却期过后：偏航角 ≤ 阈值 → 到达 B 点拐角，开始减速 */
+        else if (snap.yaw <= TASK4_CORNER_YAW_DEG)
         {
             s_state      = STATE_DECEL;
             s_decel_step = 0U;
@@ -349,26 +344,38 @@ static void Task_4(void)
         /*
          * 平滑减速：逐步降低速度目标值。
          * 从 CRUISE_SPEED 线性降到 0，分 DECEL_STEPS 步完成。
-         * 每步降 (CRUISE_SPEED / DECEL_STEPS)，避免突然刹车。
          */
         int32_t target = TASK4_CRUISE_SPEED
                        - (int32_t)((uint32_t)s_decel_step * (uint32_t)TASK4_CRUISE_SPEED
                                    / TASK4_DECEL_STEPS);
         if (target < 0) { target = 0; }
 
-        /* 只更新速度目标，不重设 PID 参数 */
         PID_SetTarget(&speed_loop.left,  target);
         PID_SetTarget(&speed_loop.right, target);
-
-        /* 继续循迹（减速过程中仍然跟随灰线） */
         LineFollow_Output();
 
         s_decel_step++;
 
-        /* 减速完成 → 停车 */
+        /* 减速完成 → 进入通过阶段（车头已过 B，等车尾也过去） */
         if (s_decel_step >= TASK4_DECEL_STEPS)
         {
-            /* 刹车 + 复位循迹 PID（小球 PID 不动） */
+            s_state     = STATE_PASS;
+            s_pass_tick = 0U;
+        }
+        break;
+    }
+
+    case STATE_PASS:
+        /*
+         * 直行通过 B 点：减速已完成（target=0），车靠惯性/低速
+         * 继续直行 TASK4_PASS_TICKS 帧，确保车尾完全通过 B 点。
+         * 期间不再循迹（已过弯道），仅维持小球控制。
+         */
+        s_pass_tick++;
+
+        if (s_pass_tick >= TASK4_PASS_TICKS)
+        {
+            /* 通过完成 → 停车 + 复位循迹 PID（小球 PID 不动） */
             API_Motor_SetSpeed(0, 0);
             PID_Reset(&direction_pid);
             PID_Reset(&speed_loop.left);
@@ -376,7 +383,6 @@ static void Task_4(void)
             s_state = STATE_DONE;
         }
         break;
-    }
 
     case STATE_DONE:
         /* 小车已停，小球位置环继续在 Ball_Move_Control() 中运行 */

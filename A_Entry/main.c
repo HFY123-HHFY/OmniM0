@@ -90,8 +90,6 @@ int main(void)
 	API_Encoder_Init(API_ENCODER_2); 		/* 编码器 2 初始化 */
 	PID_Control_Init();						/* PID 结构初始化（dt/死区/积分分离） */
 
-    /* 亚博红外巡线模块 — 结构体初始化 + 清缓冲 + 发送 $0,0,1# */
-
     API_TIM_Init(API_TIM1, 1U); /* TIMG0 1ms ISR 启动 —— 所有硬件已就绪 */
 	Buzzer_Beep(200);           /* 蜂鸣器短鸣 200ms，非阻塞（依赖 g_sys_tick_ms） */
 
@@ -149,7 +147,7 @@ int main(void)
 			// OLED_Printf(64, 0, OLED_6X8, "D%+d", direction_pid.output); // 灰度方向环输出
 			// OLED_Printf(0, 16, OLED_6X8, "R%+.1f P%+.1f", g_icm42688.roll, g_icm42688.pitch); // ICM42688 姿态角
 			// OLED_Printf(0, 32, OLED_6X8, "Y%+.3f", g_icm42688.yaw); // ICM42688 偏航角
-			// OLED_Printf(0, 48, OLED_6X8, "L%+d R%+d", Encoder1_Speed, Encoder2_Speed); // 编码器速度
+			OLED_Printf(0, 48, OLED_6X8, "L%+d R%+d", Encoder1_Speed, Encoder2_Speed); // 编码器速度
 			OLED_Update();
 		}
 #endif

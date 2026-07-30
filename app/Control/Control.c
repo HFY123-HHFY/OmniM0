@@ -184,8 +184,8 @@ void LineFollow_Output(void)
                              &out_left, &out_right);
 
     /* ── 2. 融合方向环 g_steer ── */
-    left  = (int16_t)out_left  - (int16_t)g_steer;
-    right = (int16_t)out_right + (int16_t)g_steer;
+    left  = (int16_t)out_left  + (int16_t)g_steer;
+    right = (int16_t)out_right - (int16_t)g_steer;
 
     /* ── 3. 限幅 + 写电机 ── */
     MotorOutput_Clamp(&left, &right);
@@ -213,8 +213,8 @@ void Drive_YawSpeed(void)
                              (int32_t)Encoder2_Speed,
                              &out_left, &out_right);
 
-    left  = (int16_t)out_left  + (int16_t)yaw_steer;
-    right = (int16_t)out_right - (int16_t)yaw_steer;
+    left  = (int16_t)out_left  - (int16_t)yaw_steer;
+    right = (int16_t)out_right + (int16_t)yaw_steer;
 
     MotorOutput_Clamp(&left, &right);
     API_Motor_SetSpeed(left, right);
@@ -243,8 +243,8 @@ void PID_Speed_Control(void)
  */
 void Direction_Test_Control(void)
 {
-    int16_t left  = -(int16_t)g_steer;
-    int16_t right = (int16_t)g_steer;
+    int16_t left  = (int16_t)g_steer;
+    int16_t right = -(int16_t)g_steer;
 
     MotorOutput_Clamp(&left, &right);
     API_Motor_SetSpeed(left, right);
@@ -259,8 +259,8 @@ void YawTest_Control(void)
     ICM42688_GetSnapshot(&snap);
     float   yaw   = snap.yaw;
     int32_t steer = YawPid_Calc(yaw);
-    int16_t left  = (int16_t)steer;
-    int16_t right = -(int16_t)steer;
+    int16_t left  = -(int16_t)steer;
+    int16_t right = +(int16_t)steer;
     MotorOutput_Clamp(&left, &right);
     API_Motor_SetSpeed(left, right);
 }

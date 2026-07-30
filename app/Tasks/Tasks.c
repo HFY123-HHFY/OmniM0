@@ -94,7 +94,7 @@ static void Task_2(void)
         /* 速度环 */
         PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 17.0f); /* 速度环 */
         /* 灰度方向环 */
-        Set_PID(&direction_pid, 1.75f, 0.0f, 0.010f);
+        Set_PID(&direction_pid,  2.80f, 0.0f, 0.015f); /* 循迹环 */
     }
 
     switch (s_state)
@@ -302,7 +302,7 @@ static void Task_4(void)
 
         /* ── 小车：低速巡航循迹 ── */
         PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, TASK4_CRUISE_SPEED); /* 速度环 */
-        Set_PID(&direction_pid, 0.5f, 0.0f, 0.1f);
+        Set_PID(&direction_pid,  2.80f, 0.0f, 0.015f); /* 循迹环 */
 
         /* ── 小球位置环：目标 X=0（始终控制）── */
         Set_PID(&ball_pid, 400.0f, 20.0f, 15.0f);
@@ -439,7 +439,7 @@ static void Task_5(void)
 
         /* ── 小车：低速巡航循迹 ── */
         PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, TASK5_CRUISE_SPEED); /* 速度环 */
-        Set_PID(&direction_pid, 0.5f, 0.0f, 0.1f);
+        Set_PID(&direction_pid,  2.80f, 0.0f, 0.015f); /* 循迹环 */
 
         /* ── 小球位置环：目标 X=0（始终控制）── */
         Set_PID(&ball_pid, 400.0f, 20.0f, 15.0f);

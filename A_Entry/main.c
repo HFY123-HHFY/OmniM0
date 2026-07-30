@@ -92,32 +92,34 @@ int main(void)
 	API_Encoder_Init(API_ENCODER_2);
 	PID_Control_Init();
 	IRLine_Init(&g_irLine);
-	StepMotor_Init(0x01);
-
 	/* ══════════════════════════════════════════════════════════════════
 	 * 阶段 4：启动系统时基
 	 * ══════════════════════════════════════════════════════════════════ */
 	API_TIM_Init(API_TIM1, 1U);
 
-	/* ══════════════════════════════════════════════════════════════════
-	 * 阶段 5：步进电机使能 + 回零
+	/* ═════════════════════════════════════════════════════════════════════
+	 * 阶段 5：步进电机（Emm42 V5.0）
 	 *
-	 * 零点校准（仅一次）：
-	 *   取消 SetZero 注释 → 烧录 → 手动拨摆杆到零点 → 看到 "Zero OK"
-	 *   → 重新注释 SetZero → 再次烧录
-	 * ══════════════════════════════════════════════════════════════════ */
-	// StepMotor_SetZero(1);
-	// usart_printf(USART1, "Zero Set OK\r\n");
+	 * 首次校准（仅一次！校准完立刻注释掉）：
+	 *   // Stepmotor_CalibrateOnce();   // 取消注释 → 烧录 → 电机空载校准
+	 *                                   // 校准后手动拨电机到机械零点
+	 *                                   // 看到蜂鸣器响 → 重新注释 → 烧录
+	 *
+	 * 正常上电：
+	 *   Stepmotor_BootInit() → 等驱动板上线 → 使能 → 自动回零
+	 * ═════════════════════════════════════════════════════════════════════ */
 
-	StepMotor_Enable();
-	StepMotor_GoHome(3000U);
-	StepMotor_ConfigMove(250.0f, 200.0f);  // 最大 250RPM，加速 200RPM/s, 设置步进电机转速
+	// Stepmotor_CalibrateOnce();          /* ★ 首次校准：仅跑一次，跑完立刻注释！ */
+
+	Stepmotor_BootInit(); /* 驱动板 5s 内未上线 — 检查接线/供电/波特率后复位 */
+	Stepmotor_ConfigMove(250.0f, 200.0f);  // 最大 250RPM，加速 200RPM/s
+
 
 	// PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 20.0f); /* 速度环 */
 	// Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
 	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f); /* 偏航环 */
 
-	Buzzer_Beep(100);
+	// Buzzer_Beep(100);
 
 	while (1)
 	{
@@ -135,9 +137,9 @@ int main(void)
 			key_Get();
 
 			/* 步进电机手动测试（调试用，注释掉避免和 Task_Run 冲突） */
-			// if (Key == 1) { Key = 0; StepMotor_SetAngle(180.0f);  }
-			// if (Key == 2) { Key = 0; StepMotor_SetAngle(0.0f);    }
-			// if (Key == 3) { Key = 0; StepMotor_SetAngle(-180.0f); }
+			if (Key == 1) { Key = 0; Stepmotor_SetAngle(STEPMOTOR1,10.0f);  }
+			if (Key == 2) { Key = 0; Stepmotor_SetAngle(STEPMOTOR1,0.0f);    }
+			if (Key == 3) { Key = 0; Stepmotor_SetAngle(STEPMOTOR1,-10.0f); }
 		}
 
 		/* ── 串口打印 50ms ── */

@@ -1,8 +1,8 @@
 /*
- * StepMotor.c — 张大头 ZDT_X系列 步进闭环电机驱动
+ * StepMotor.c — Emm42 V5.0 步进闭环电机驱动
  *
  * 硬件背景：
- *   - 通信方式：UART (API_USART3, 115200 bps)
+ *   - 通信方式：UART (API_USART2, 115200 bps)
  *   - 协议格式：地址 + 命令 + 数据... + 0x6B（固定校验字节）
  *   - 0xFD 梯形位置模式数据：方向(1) + 转速(2) + 加速度(1) + 脉冲(4) + 模式(1) + 同步(1)
  *   - 角度 → 脉冲：pulses = angle × 3200 / 360（1.8°电机, 16细分）
@@ -10,21 +10,19 @@
  * 架构设计：
  *   - TX：API_USART_WriteByte（G3507_usart.c 已修复，不等 BUSY）
  *   - RX：ISR + 环形缓冲协作模式
- *     ┌─ USART3 ISR ──────────────────────────┐
+ *     ┌─ USART2 ISR ──────────────────────────┐
  *     │  usart_irq_dispatch_by_id 读 FIFO       │
  *     │  → StepMotor_RxPush(byte) → 环形缓冲    │  ← 极快，只入队
  *     └────────────────────────────────────────┘
- *     ┌─ 阻塞命令（Enable/GoHome/GetAngle）────┐
+ *     ┌─ 阻塞命令（Enable/GoHome/ReadAngle）───┐
  *     │  StepMotor_RxBuf → 从环形缓冲取字节     │  ← 轮询等待，带超时
  *     └────────────────────────────────────────┘
  *   - 非阻塞命令（SetAngle/MoveBy/Stop）：只发不收
- *
- * 参考：张大头官方 STM32 驱动（已验证通过）
  */
 
 #include "StepMotor.h"
-#include "usart.h"              /* API_USART_WriteByte / USART3 */
-#include "Delay.h"              /* Delay_ms                        */
+#include "usart.h"              /* API_USART_WriteByte */
+#include "Delay.h"              /* Delay_ms            */
 #include "Control_Task/Control_Task.h"  /* SysTick_GetMs */
 
 /*===========================================================================
@@ -36,28 +34,22 @@
 
 /* ── 电机参数 ── */
 #define MOTOR_PULSES_PER_REV   3200U         /* 1.8°步进角, 16细分   */
-#define MOTOR_DEG_PER_PULSE    0.1125f       /* 360/3200              */
 
 /* ── 命令码 ── */
-#define CMD_ENABLE        0xF3U
-#define CMD_POS_TRAPEZOID 0xFDU   /* 梯形曲线位置模式       */
-#define CMD_STOP          0xFEU
-#define CMD_READ_POS      0x36U   /* 读取实时位置          */
-#define CMD_READ_SPEED    0x35U   /* 读取实时转速          */
-#define CMD_READ_STATUS   0x3AU   /* 读取状态标志位        */
-#define CMD_SET_ZERO      0x93U   /* 设置单圈回零零点      */
-#define CMD_GO_HOME       0x9AU   /* 触发回零              */
-#define CMD_CLEAR_ANGLE   0x0AU
-#define CMD_RELEASE_STALL 0x0EU
+#define CMD_CALIBRATE     0x06U   /* 编码器校准                */
+#define CMD_CLEAR_ANGLE   0x0AU   /* 当前位置清零              */
+#define CMD_RELEASE_STALL 0x0EU   /* 解除堵转保护              */
+#define CMD_READ_SPEED    0x35U   /* 读取实时转速              */
+#define CMD_READ_POS      0x36U   /* 读取实时位置              */
+#define CMD_READ_STATUS   0x3AU   /* 读取状态标志位            */
+#define CMD_SET_ZERO      0x93U   /* 设置单圈回零零点          */
+#define CMD_GO_HOME       0x9AU   /* 触发回零                  */
+#define CMD_ENABLE        0xF3U   /* 使能/失能                 */
+#define CMD_POS_TRAPEZOID 0xFDU   /* 梯形曲线位置模式          */
+#define CMD_STOP          0xFEU   /* 急停                      */
 
 /* ── 应答状态码 ── */
 #define RESP_OK           0x02U
-#define RESP_ERROR_CMD    0x00U
-#define RESP_ERROR_CODE   0xEEU
-
-/* ── 位置模式 ── */
-#define POS_RELATIVE      0x00U
-#define POS_ABSOLUTE      0x01U
 
 /* ── 方向 ── */
 #define DIR_CW            0x00U
@@ -103,9 +95,6 @@ static void StepMotor_TxBuf(const uint8_t *data, uint8_t len)
 
 /*
  * 从环形缓冲取 len 字节，超时返回 -1。
- *
- * ISR（StepMotor_RxPush）负责把 USART3 收到的字节推入环形缓冲，
- * 此函数从环形缓冲取出。不直接读 USART3 寄存器，避免和 ISR 抢 FIFO。
  */
 static int8_t StepMotor_RxBuf(uint8_t *buf, uint8_t len, uint32_t timeoutMs)
 {
@@ -116,7 +105,6 @@ static int8_t StepMotor_RxBuf(uint8_t *buf, uint8_t len, uint32_t timeoutMs)
     {
         if (s_rx_tail != s_rx_head)
         {
-            /* 环形缓冲有数据 */
             buf[i++] = s_rx_buf[s_rx_tail];
             s_rx_tail = (uint16_t)((s_rx_tail + 1U) % STEPMOTOR_RX_BUF_SIZE);
         }
@@ -129,24 +117,17 @@ static int8_t StepMotor_RxBuf(uint8_t *buf, uint8_t len, uint32_t timeoutMs)
 }
 
 /*
- * 发送命令 + 接收应答，一步完成。
+ * 发送命令 + 接收应答（内部通用）。
  *
- * @param fc        功能码（0xF3 / 0xFD / 0x36 ...）
- * @param data      数据字节数组（可为 NULL）
- * @param dataLen   数据字节数
- * @param rxBuf     应答缓冲区
- * @param rxLen     期望收到的应答字节数
- * @param timeoutMs 超时
- * @retval  0  成功
- * @retval -1  超时 / 应答不匹配
+ * @param checkResp  1=校验 rx[2]==0x02（控制命令），0=不校验（读取命令）
  */
-static int8_t StepMotor_Cmd(uint8_t fc, const uint8_t *data, uint8_t dataLen,
-                             uint8_t *rxBuf, uint8_t rxLen, uint32_t timeoutMs)
+static int8_t StepMotor_CmdEx(uint8_t fc, const uint8_t *data, uint8_t dataLen,
+                               uint8_t *rxBuf, uint8_t rxLen, uint32_t timeoutMs,
+                               uint8_t checkResp)
 {
     uint8_t tx[32];
     uint8_t i;
 
-    /* 组装发送帧：地址 + 功能码 + 数据（校验字节由 TxBuf 追加） */
     tx[0] = s_addr;
     tx[1] = fc;
     for (i = 0U; i < dataLen; i++)
@@ -156,42 +137,53 @@ static int8_t StepMotor_Cmd(uint8_t fc, const uint8_t *data, uint8_t dataLen,
 
     StepMotor_TxBuf(tx, (uint8_t)(2U + dataLen));
 
-    /* 不需要应答则直接返回 */
-    if (rxBuf == 0 || rxLen == 0U)
-    {
-        return 0;
-    }
+    if (rxBuf == 0 || rxLen == 0U) { return 0; }
 
-    /* 轮询接收 */
-    if (StepMotor_RxBuf(rxBuf, rxLen, timeoutMs) != 0)
-    {
-        return -1;  /* 超时 */
-    }
+    if (StepMotor_RxBuf(rxBuf, rxLen, timeoutMs) != 0) { return -1; }
 
-    /* 校验应答：地址 + 功能码必须匹配 */
-    if (rxBuf[0] != s_addr || rxBuf[1] != fc)
-    {
-        return -1;  /* 应答不匹配 */
-    }
+    if (rxBuf[0] != s_addr || rxBuf[1] != fc) { return -1; }
 
-    /* 检查状态码（数据首字节） */
-    if (rxLen >= 3U && rxBuf[2] != RESP_OK)
+    if ((checkResp != 0U) && (rxLen >= 3U) && (rxBuf[2] != RESP_OK))
     {
-        return -1;  /* 命令被拒绝 */
+        return -1;
     }
 
     return 0;
 }
 
+/* 控制命令：校验 rx[2]==0x02 */
+static int8_t StepMotor_Cmd(uint8_t fc, const uint8_t *data, uint8_t dataLen,
+                             uint8_t *rxBuf, uint8_t rxLen, uint32_t timeoutMs)
+{
+    return StepMotor_CmdEx(fc, data, dataLen, rxBuf, rxLen, timeoutMs, 1U);
+}
+
+/* 读取命令：不校验 rx[2]（那是数据） */
+static int8_t StepMotor_Read(uint8_t fc, uint8_t *rxBuf, uint8_t rxLen, uint32_t timeoutMs)
+{
+    return StepMotor_CmdEx(fc, 0, 0U, rxBuf, rxLen, timeoutMs, 0U);
+}
+
+/* ── 内部：int8_t → MotorErrCode ── */
+static MotorErrCode to_err(int8_t ret)
+{
+    if (ret == 0) return MOTOR_OK;
+    return MOTOR_ERR_NONE;
+}
+
 /*===========================================================================
- * 初始化
+ * ① 模块初始化
  *===========================================================================*/
 
-void StepMotor_Init(uint8_t addr)
+/*
+ * 关闭 RX 中断残留，清空环形缓冲。
+ * 在 API_USART_Init 之后、其他 Stepmotor_* 之前调用。
+ */
+void Stepmotor_Init(void)
 {
     uint16_t i;
 
-    s_addr = addr;
+    s_addr      = 0x01U;
     s_cfg_speed = 600.0f;
     s_cfg_accel = 0x00U;
 
@@ -205,10 +197,84 @@ void StepMotor_Init(uint8_t addr)
 }
 
 /*===========================================================================
- * StepMotor_RxPush — ISR 调用：USART3 收到字节 → 推入环形缓冲
+ * Stepmotor_CalibrateOnce — 首次编码器校准 + 设零点（仅需执行一次！）
  *
- * 由 Control_Task_USART_Callback 在 USART3 中断中调用。
- * 极快（< 1µs），只做环形缓冲入队，不在 ISR 中解析协议。
+ * ⚠️ 校准前电机必须空载（不装摆杆/云台/任何负载），否则编码器零点偏移，
+ *    后续 GoHome 位置不可靠。
+ *
+ * 流程：
+ *   1. Stepmotor_Init → SelfTest → Enable
+ *   2. Calibrate(30s) → 电机会自动旋转完成编码器对齐
+ *   3. 此时需手动把电机拨到机械零点位置
+ *   4. SetOrigin(存 Flash) → GoHome 验证
+ *
+ * 校准完成 → GoHome 验证 → 死循环，用户重新注释掉此调用并烧录正常固件。
+ *===========================================================================*/
+void Stepmotor_CalibrateOnce(void)
+{
+    /* 等驱动板上线 */
+    if (Stepmotor_SelfTest(STEPMOTOR1) != MOTOR_OK) { while (1); }
+    if (Stepmotor_Enable(STEPMOTOR1) != MOTOR_OK)   { while (1); }
+
+    /* 编码器校准（电机会自动旋转数秒，最多等 30s） */
+    Stepmotor_Calibrate(STEPMOTOR1, 30000U);
+
+    /*
+     * 此时电机已停转。手动把电机拨到你想要的机械零点位置，
+     * 拨好后再按复位键或重新上电。
+     *
+     * ⚠️ 还没拨到零点？现在做！
+     */
+
+    /* 将当前位置保存为回零原点（存入 Flash，掉电不丢失） */
+    Stepmotor_SetOrigin(STEPMOTOR1, 1U);
+
+    /* 验证回零：电机应自动转回刚设的零点 */
+    Stepmotor_GoHome(STEPMOTOR1, 10000U);
+
+    /* 校准完成，卡在这里等用户重新注释此调用并烧录正常固件 */
+    while (1);
+}
+
+/*===========================================================================
+ * Stepmotor_BootInit — 每次上电的电机初始化（等驱动板上线 + 使能 + 回零）
+ *
+ * MCU 上电比驱动板快，需要 SelfTest 重试等待驱动板完成自检。
+ * 连接成功后使能电机并自动回零到此前 CalibrateOnce 保存的零点。
+ *
+ * @retval MOTOR_OK       初始化成功，电机已在零点，可以进入 PID 控制
+ * @retval MOTOR_ERR_NONE 驱动板无应答（5s 内未上线，检查接线/供电）
+ *===========================================================================*/
+MotorErrCode Stepmotor_BootInit(void)
+{
+    MotorErrCode e = MOTOR_ERR_NONE;
+    uint32_t start = SysTick_GetMs();
+
+    Stepmotor_Init();
+
+    /* 等驱动板上线，最多 5 秒（每 100ms 重试一次） */
+    while ((SysTick_GetMs() - start) < 5000U)
+    {
+        e = Stepmotor_SelfTest(STEPMOTOR1);
+        if (e == MOTOR_OK)
+        {
+            e = Stepmotor_Enable(STEPMOTOR1);
+            if (e == MOTOR_OK) break;
+        }
+        Delay_ms(100);
+    }
+
+    if (e != MOTOR_OK)
+    {
+        return MOTOR_ERR_NONE;  /* 驱动板未上线 */
+    }
+
+    /* 自动回零到此前 CalibrateOnce 保存的零点 */
+    return Stepmotor_GoHome(STEPMOTOR1, 8000U);
+}
+
+/*===========================================================================
+ * StepMotor_RxPush — ISR 调用：USART 收到字节 → 推入环形缓冲
  *===========================================================================*/
 
 void StepMotor_RxPush(uint8_t data)
@@ -218,7 +284,6 @@ void StepMotor_RxPush(uint8_t data)
     s_rx_buf[s_rx_head] = data;
     s_rx_head = next;
 
-    /* 缓冲满 → 丢弃最老 1 字节（滑动窗口，防止死锁） */
     if (next == s_rx_tail)
     {
         s_rx_tail = (uint16_t)((s_rx_tail + 1U) % STEPMOTOR_RX_BUF_SIZE);
@@ -226,17 +291,177 @@ void StepMotor_RxPush(uint8_t data)
 }
 
 /*===========================================================================
- * 运动参数配置
+ * ② 通信检测与使能
  *===========================================================================*/
 
-void StepMotor_ConfigMove(float speed, float accel)
+MotorErrCode Stepmotor_SelfTest(uint8_t id)
+{
+    uint8_t rx[4];
+
+    (void)id;  /* 当前仅支持单电机，id 预留 */
+    s_addr = id;
+
+    /* 读一次状态，能收到应答即通信正常 */
+    if (StepMotor_Read(CMD_READ_STATUS, rx, 4U, TIMEOUT_READ_MS) != 0)
+    {
+        return MOTOR_ERR_NONE;
+    }
+    return MOTOR_OK;
+}
+
+MotorErrCode Stepmotor_Enable(uint8_t id)
+{
+    uint8_t rx[4];
+    const uint8_t d[] = {0xAB, 0x01, 0x00};
+
+    s_addr = id;
+    return to_err(StepMotor_Cmd(CMD_ENABLE, d, 3U, rx, 4U, TIMEOUT_CTRL_MS));
+}
+
+MotorErrCode Stepmotor_Disable(uint8_t id)
+{
+    const uint8_t d[] = {0xAB, 0x00, 0x00};
+
+    s_addr = id;
+    (void)StepMotor_Cmd(CMD_ENABLE, d, 3U, 0, 0U, 0U);
+    return MOTOR_OK;
+}
+
+MotorErrCode Stepmotor_Stop(uint8_t id)
+{
+    const uint8_t d[] = {0x98, 0x00};
+    uint8_t tx[4];
+
+    s_addr = id;
+    tx[0] = s_addr;
+    tx[1] = CMD_STOP;
+    tx[2] = d[0];
+    tx[3] = d[1];
+    StepMotor_TxBuf(tx, 4U);
+    return MOTOR_OK;
+}
+
+/*===========================================================================
+ * ③ 首次校准（仅一次，电机必须空载！）
+ *===========================================================================*/
+
+/*
+ * 编码器校准：电机自动旋转完成编码器对齐。
+ *
+ * 命令格式：地址 + 0x06 + 0x45 + 0x6B
+ * 发送后电机会自动旋转数秒，完成后自动停止。
+ */
+MotorErrCode Stepmotor_Calibrate(uint8_t id, uint32_t timeoutMs)
+{
+    const uint8_t d[] = {0x45};
+    uint8_t rx[4];
+    uint32_t deadline;
+
+    s_addr = id;
+
+    /* ── 发送校准指令 ── */
+    if (StepMotor_Cmd(CMD_CALIBRATE, d, 1U, rx, 4U, 1000U) != 0)
+    {
+        return MOTOR_ERR_NONE;
+    }
+
+    /* ── 等待校准完成（电机会自动旋转数秒后停止）── */
+    deadline = SysTick_GetMs() + timeoutMs;
+
+    while (SysTick_GetMs() < deadline)
+    {
+        uint8_t st = Stepmotor_ReadStatus(id);
+
+        /* 到位且未堵转 → 校准完成 */
+        if ((st & MOTOR_STAT_IN_POS) && !(st & MOTOR_STAT_STALL_NOW))
+        {
+            return MOTOR_OK;
+        }
+
+        /* 堵转锁死 → 校准失败 */
+        if (st & MOTOR_STAT_STALL_LOCK)
+        {
+            return MOTOR_ERR_STALL;
+        }
+
+        Delay_ms(100U);  /* 校准期间 100ms 查询一次即可 */
+    }
+
+    return MOTOR_ERR_TIMEOUT;
+}
+
+/*
+ * 将电机当前位置保存为回零原点。
+ *
+ * 命令格式：地址 + 0x93 + 0x88 + 存储标志 + 0x6B
+ */
+MotorErrCode Stepmotor_SetOrigin(uint8_t id, uint8_t saveToFlash)
+{
+    const uint8_t d[] = {0x88, (saveToFlash != 0U) ? 0x01U : 0x00U};
+    uint8_t rx[4];
+
+    s_addr = id;
+    return to_err(StepMotor_Cmd(CMD_SET_ZERO, d, 2U, rx, 4U, TIMEOUT_CTRL_MS));
+}
+
+/*
+ * 触发回零并阻塞等待完成。
+ *
+ * 命令格式：地址 + 0x9A + 回零模式 + 同步标志 + 0x6B
+ */
+MotorErrCode Stepmotor_GoHome(uint8_t id, uint32_t timeoutMs)
+{
+    const uint8_t d[] = {0x00, 0x00};  /* 单圈就近模式 + 立即执行 */
+    uint8_t rx[4];
+    uint32_t deadline;
+
+    s_addr = id;
+
+    /* ── 发送回零指令（1s 内必须收到应答）── */
+    if (StepMotor_Cmd(CMD_GO_HOME, d, 2U, rx, 4U, 1000U) != 0)
+    {
+        return MOTOR_ERR_HOME_FAIL;  /* 应答错误 / 未保存过零点 */
+    }
+
+    /* ── 真实时间超时轮询 ── */
+    deadline = SysTick_GetMs() + timeoutMs;
+
+    while (SysTick_GetMs() < deadline)
+    {
+        uint8_t st = Stepmotor_ReadStatus(id);
+
+        if ((st & MOTOR_STAT_IN_POS) && !(st & MOTOR_STAT_STALL_NOW))
+        {
+            return MOTOR_OK;
+        }
+
+        if (st & MOTOR_STAT_STALL_LOCK)
+        {
+            return MOTOR_ERR_STALL;
+        }
+
+        Delay_ms(3U);
+    }
+
+    return MOTOR_ERR_TIMEOUT;
+}
+
+MotorErrCode Stepmotor_ResetStall(uint8_t id)
+{
+    const uint8_t d[] = {0x52};
+    uint8_t rx[4];
+
+    s_addr = id;
+    return to_err(StepMotor_Cmd(CMD_RELEASE_STALL, d, 1U, rx, 4U, TIMEOUT_CTRL_MS));
+}
+
+/*===========================================================================
+ * ④ 运动控制
+ *===========================================================================*/
+
+void Stepmotor_ConfigMove(float speed, float accel)
 {
     s_cfg_speed = speed;
-    /*
-     * 加速度映射：float RPM/s → uint8 档位。
-     * 参考驱动中 accel 为单字节，0=直启，值越大加速越缓。
-     * 这里简化：accel > 0 时取 min(accel/10, 255) 作为档位。
-     */
     if (accel <= 0.0f)
     {
         s_cfg_accel = 0x00U;
@@ -248,69 +473,53 @@ void StepMotor_ConfigMove(float speed, float accel)
     }
 }
 
-/*===========================================================================
- * 使能 / 失能
- *
- * 命令格式：地址 + 0xF3 + 0xAB + 使能状态 + 同步标志 + 0x6B
- *===========================================================================*/
-
-int8_t StepMotor_Enable(void)
-{
-    uint8_t rx[4];
-    const uint8_t d[] = {0xAB, 0x01, 0x00};  /* magic + enable + sync */
-    return StepMotor_Cmd(CMD_ENABLE, d, 3U, rx, 4U, TIMEOUT_CTRL_MS);
-}
-
-int8_t StepMotor_Disable(void)
-{
-    const uint8_t d[] = {0xAB, 0x00, 0x00};  /* magic + disable + sync */
-    (void)StepMotor_Cmd(CMD_ENABLE, d, 3U, 0, 0U, 0U);
-    return 0;
-}
-
-/*===========================================================================
+/*
  * 梯形曲线位置命令 — 内部共用
- *
- * 参考张大头官方 STM32 驱动，0xFD 命令数据格式：
- *   方向(1) + 转速(2) + 加速度(1) + 脉冲(4) + 模式(1) + 同步(1) = 10 字节
- *
- * 转速 = rpm × 10（大端）
- * 脉冲 = angle × 3200 / 360（大端）
- *===========================================================================*/
-
-static void StepMotor_SendPositionCmd(float angle_deg, uint8_t relAbs)
+ */
+static void StepMotor_SendPositionCmdEx(float angle_deg, uint16_t rpm,
+                                         uint8_t accel, uint8_t relAbs)
 {
     uint8_t  d[10];
     int32_t  pulses;
     uint16_t spd;
     uint8_t  i;
 
+    /* 转速：外部指定或沿用 ConfigMove */
+    if (rpm == 0U)
+    {
+        spd = (uint16_t)(s_cfg_speed * 10.0f + 0.5f);
+    }
+    else
+    {
+        spd = rpm * 10U;
+    }
+    if (spd == 0U) { spd = 10U; }
+
+    /* 加速度：外部指定或沿用 ConfigMove */
+    if (accel == 0U) { accel = s_cfg_accel; }
+
     /* 角度 → 脉冲 */
     pulses = (int32_t)(angle_deg * (float)MOTOR_PULSES_PER_REV / 360.0f);
-
-    /* 转速 = rpm × 10 */
-    spd = (uint16_t)(s_cfg_speed * 10.0f + 0.5f);
-    if (spd == 0U) { spd = 10U; }  /* 最小转速 1.0 RPM */
 
     /* ── 组装 10 字节数据 ── */
     d[0] = (pulses < 0) ? DIR_CCW : DIR_CW;
     if (pulses < 0) { pulses = -pulses; }
 
-    d[1] = (uint8_t)(spd >> 8);                     /* 转速高字节 */
-    d[2] = (uint8_t)(spd & 0xFFU);                  /* 转速低字节 */
-    d[3] = s_cfg_accel;                             /* 加速度档位  */
+    d[1] = (uint8_t)(spd >> 8);
+    d[2] = (uint8_t)(spd & 0xFFU);
+    d[3] = accel;
 
-    d[4] = (uint8_t)(((uint32_t)pulses >> 24) & 0xFFU);  /* 脉冲 [31:24] */
-    d[5] = (uint8_t)(((uint32_t)pulses >> 16) & 0xFFU);  /* 脉冲 [23:16] */
-    d[6] = (uint8_t)(((uint32_t)pulses >> 8)  & 0xFFU);  /* 脉冲 [15:8]  */
-    d[7] = (uint8_t)((uint32_t)pulses         & 0xFFU);  /* 脉冲 [7:0]   */
+    d[4] = (uint8_t)(((uint32_t)pulses >> 24) & 0xFFU);
+    d[5] = (uint8_t)(((uint32_t)pulses >> 16) & 0xFFU);
+    d[6] = (uint8_t)(((uint32_t)pulses >> 8)  & 0xFFU);
+    d[7] = (uint8_t)((uint32_t)pulses         & 0xFFU);
 
-    d[8] = relAbs;                                  /* 相对/绝对     */
-    d[9] = 0x00U;                                   /* 立即执行      */
+    d[8] = relAbs;
+    d[9] = 0x00U;  /* 立即执行 */
 
-    /* ── 组装帧并发送（不等待应答，非阻塞）── */
+    /* ── 发送（非阻塞，不等应答）── */
     {
-        uint8_t tx[14];  /* addr + fc + 10 + checksum */
+        uint8_t tx[14];
         tx[0] = s_addr;
         tx[1] = CMD_POS_TRAPEZOID;
         for (i = 0U; i < 10U; i++) { tx[2U + i] = d[i]; }
@@ -318,64 +527,96 @@ static void StepMotor_SendPositionCmd(float angle_deg, uint8_t relAbs)
     }
 }
 
-/*===========================================================================
- * ② PID 输出接口（非阻塞）
- *===========================================================================*/
-
-void StepMotor_SetAngle(float angle_deg)
+/* ── 内部：角度非法值安全裁切 ── */
+static float clamp_angle(float a)
 {
-    StepMotor_SendPositionCmd(angle_deg, POS_ABSOLUTE);
+    if (a >  720.0f) a =  720.0f;
+    if (a < -720.0f) a = -720.0f;
+    return a;
 }
 
-void StepMotor_MoveBy(float angle_deg)
+void Stepmotor_MoveTo(uint8_t id, float angle, uint16_t rpm,
+                      uint8_t accel, uint8_t mode)
 {
-    StepMotor_SendPositionCmd(angle_deg, POS_RELATIVE);
+    s_addr = id;
+    StepMotor_SendPositionCmdEx(clamp_angle(angle), rpm, accel, mode);
+}
+
+MotorErrCode Stepmotor_GoTo(uint8_t id, float angle, uint16_t rpm,
+                            uint8_t accel, uint8_t mode, uint32_t timeoutMs)
+{
+    uint32_t deadline;
+
+    s_addr = id;
+    StepMotor_SendPositionCmdEx(clamp_angle(angle), rpm, accel, mode);
+
+    /* ── 轮询等到位 ── */
+    deadline = SysTick_GetMs() + timeoutMs;
+
+    while (SysTick_GetMs() < deadline)
+    {
+        uint8_t st = Stepmotor_ReadStatus(id);
+
+        if ((st & MOTOR_STAT_IN_POS) && !(st & MOTOR_STAT_STALL_NOW))
+        {
+            return MOTOR_OK;
+        }
+
+        if (st & MOTOR_STAT_STALL_LOCK)
+        {
+            return MOTOR_ERR_STALL;
+        }
+
+        Delay_ms(5U);
+    }
+
+    return MOTOR_ERR_TIMEOUT;
+}
+
+/* ── 便捷函数（兼容旧 PID 接口）── */
+
+void Stepmotor_SetAngle(uint8_t id, float angle_deg)
+{
+    s_addr = id;
+    StepMotor_SendPositionCmdEx(clamp_angle(angle_deg), 0U, 0U, MOTOR_MODE_ABS);
+}
+
+void Stepmotor_MoveBy(uint8_t id, float angle_deg)
+{
+    s_addr = id;
+    StepMotor_SendPositionCmdEx(angle_deg, 0U, 0U, MOTOR_MODE_REL);
 }
 
 /*===========================================================================
- * 立即停止（非阻塞）
- *
- * 命令格式：地址 + 0xFE + 0x98 + 同步标志 + 0x6B
+ * ⑤ 状态查询
  *===========================================================================*/
 
-void StepMotor_Stop(void)
+float Stepmotor_ReadAngle(uint8_t id)
 {
-    const uint8_t d[] = {0x98, 0x00};  /* magic + sync */
-    uint8_t tx[4];
-    tx[0] = s_addr;
-    tx[1] = CMD_STOP;
-    tx[2] = d[0];
-    tx[3] = d[1];
-    StepMotor_TxBuf(tx, 4U);
-}
+    uint8_t rx[8];
 
-/*===========================================================================
- * 位置与状态读取
- *===========================================================================*/
+    s_addr = id;
 
-float StepMotor_GetAngle(void)
-{
-    uint8_t rx[8];  /* addr + 0x36 + sign(1) + angle(4) + checksum(1) */
-
-    if (StepMotor_Cmd(CMD_READ_POS, 0, 0U, rx, 7U, TIMEOUT_READ_MS) != 0)
+    if (StepMotor_Read(CMD_READ_POS, rx, 7U, TIMEOUT_READ_MS) != 0)
     {
         return 0.0f;
     }
 
-    /* 解析：rx[2]=sign, rx[3..6]=angle_raw (big-endian) */
     {
         int32_t raw = ((int32_t)rx[3] << 24) | ((int32_t)rx[4] << 16)
                     | ((int32_t)rx[5] << 8)  |  (int32_t)rx[6];
         if (rx[2] != 0U) { raw = -raw; }
-        return (float)raw * 0.1f;  /* ×10 → 度 */
+        return (float)raw * 0.1f;
     }
 }
 
-float StepMotor_GetSpeed(void)
+float Stepmotor_ReadSpeed(uint8_t id)
 {
-    uint8_t rx[6];  /* addr + 0x35 + sign(1) + speed(2) + checksum(1) */
+    uint8_t rx[6];
 
-    if (StepMotor_Cmd(CMD_READ_SPEED, 0, 0U, rx, 5U, TIMEOUT_READ_MS) != 0)
+    s_addr = id;
+
+    if (StepMotor_Read(CMD_READ_SPEED, rx, 5U, TIMEOUT_READ_MS) != 0)
     {
         return 0.0f;
     }
@@ -387,11 +628,13 @@ float StepMotor_GetSpeed(void)
     }
 }
 
-uint8_t StepMotor_GetStatus(void)
+uint8_t Stepmotor_ReadStatus(uint8_t id)
 {
-    uint8_t rx[4];  /* addr + 0x3A + status(1) + checksum(1) */
+    uint8_t rx[4];
 
-    if (StepMotor_Cmd(CMD_READ_STATUS, 0, 0U, rx, 4U, TIMEOUT_READ_MS) != 0)
+    s_addr = id;
+
+    if (StepMotor_Read(CMD_READ_STATUS, rx, 4U, TIMEOUT_READ_MS) != 0)
     {
         return 0U;
     }
@@ -399,119 +642,3 @@ uint8_t StepMotor_GetStatus(void)
     return rx[2];
 }
 
-uint8_t StepMotor_IsInPosition(void)
-{
-    return (StepMotor_GetStatus() & STEPMOTOR_STAT_INPOS) ? 1U : 0U;
-}
-
-uint8_t StepMotor_IsStalled(void)
-{
-    uint8_t st = StepMotor_GetStatus();
-    return ((st & STEPMOTOR_STAT_STALL) || (st & STEPMOTOR_STAT_PROTECT)) ? 1U : 0U;
-}
-
-/*===========================================================================
- * 辅助控制
- *===========================================================================*/
-
-int8_t StepMotor_ClearAngle(void)
-{
-    const uint8_t d[] = {0x6D};
-    uint8_t rx[4];
-    return StepMotor_Cmd(CMD_CLEAR_ANGLE, d, 1U, rx, 4U, TIMEOUT_CTRL_MS);
-}
-
-int8_t StepMotor_ReleaseStall(void)
-{
-    const uint8_t d[] = {0x52};
-    uint8_t rx[4];
-    return StepMotor_Cmd(CMD_RELEASE_STALL, d, 1U, rx, 4U, TIMEOUT_CTRL_MS);
-}
-
-/*===========================================================================
- * ⑤ 回零操作
- *
- * 协议参考：张大头官方 STM32 驱动
- *
- * 回零流程：
- *   1. 校准阶段（SetZero，仅一次）：
- *      手动把摆杆转到你想要的机械零点位置 →
- *      调用 StepMotor_SetZero(1) → 零点存入驱动器 Flash。
- *
- *   2. 每次上电（GoHome）：
- *      Enable → GoHome → 电机自动转到零点 → 进入 PID 控制。
- *
- * 回零方向（O_Dir）和回零模式（O_Mode）在驱动器菜单或通过
- * 0x4C 修改回零参数命令设置，不在本驱动中修改。
- *===========================================================================*/
-
-/*
- * 设置单圈回零零点 — 将当前物理位置保存为绝对零点。
- *
- * 命令格式：地址 + 0x93 + 0x88 + 存储标志 + 0x6B
- *
- * @param saveToFlash  0x01=存入 Flash（掉电保持，推荐）
- *                     0x00=仅本次上电有效
- * @retval  0  成功
- * @retval -1  超时/应答错误
- */
-int8_t StepMotor_SetZero(uint8_t saveToFlash)
-{
-    const uint8_t d[] = {0x88, (saveToFlash != 0U) ? 0x01U : 0x00U};
-    uint8_t rx[4];
-    return StepMotor_Cmd(CMD_SET_ZERO, d, 2U, rx, 4U, TIMEOUT_CTRL_MS);
-}
-
-/*
- * 触发单圈回零并阻塞等待完成。
- *
- * 命令格式：地址 + 0x9A + 回零模式 + 同步标志 + 0x6B
- *   回零模式：0x00 = 单圈就近回零（方向由驱动器 O_Dir 菜单决定）
- *
- * 发送指令后，每 10ms 读取一次电机状态（0x3A），
- * 检查到位标志（bit1）且未堵转（bit2=0），即认为回零成功。
- *
- * @param timeoutMs  最大等待时间（ms），默认 5000
- * @retval  0  回零成功
- * @retval -1  超时 / 堵转 / 指令被拒绝
- */
-int8_t StepMotor_GoHome(uint32_t timeoutMs)
-{
-    const uint8_t d[] = {0x00, 0x00};  /* 单圈就近模式 + 立即执行 */
-    uint8_t rx[4];
-    int8_t  ret;
-    uint32_t deadline;
-
-    /* ── 发送回零指令 ── */
-    ret = StepMotor_Cmd(CMD_GO_HOME, d, 2U, rx, 4U, 1000U);
-    if (ret != 0)
-    {
-        return -1;  /* 超时 / 应答不匹配 / 被拒绝（rx[2]==0xE2 表示条件不满足） */
-    }
-
-    /* ── 轮询等待回零完成 ── */
-    deadline = timeoutMs / 10U;
-    if (deadline == 0U) { deadline = 1U; }
-
-    while (deadline > 0U)
-    {
-        uint8_t st = StepMotor_GetStatus();
-
-        /* 到位 且 未堵转 → 回零成功 */
-        if ((st & STEPMOTOR_STAT_INPOS) && !(st & STEPMOTOR_STAT_STALL))
-        {
-            return 0;
-        }
-
-        /* 堵转保护触发 → 回零失败 */
-        if (st & STEPMOTOR_STAT_PROTECT)
-        {
-            return -1;
-        }
-
-        Delay_ms(10U);
-        deadline--;
-    }
-
-    return -1;  /* 超时 */
-}

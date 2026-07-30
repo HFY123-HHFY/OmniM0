@@ -39,12 +39,12 @@ int32_t YawPid_Calc(float yaw_degrees); /* 计算偏航角 PID 输出（度，�
 void YawTest_Control(void);             /* 偏航角单独测试（纯差速，绕过速度环）  */
 
 /*
- * 小球位置环 — 摄像头 X 坐标 → 位置 PID → StepMotor_SetAngle
+ * 小球位置环 — 摄像头 X 坐标 → 位置 PID → Stepmotor_SetAngle
  *
  * BallPid_Init:     初始化 PID 结构体（限制、死区、采样周期）
  * BallPid_SetTarget:设置目标 X 坐标（浮点，和 CAM_X 同量纲，支持小数点精度）
  * BallPid_Calc:     给定当前 X 坐标（浮点），内部缩放 100× 送整数 PID
- * Ball_Move_Control:完整控制周期 — 读 CAM_X → PID → StepMotor_SetAngle
+ * Ball_Move_Control:完整控制周期 — 读 CAM_X → PID → Stepmotor_SetAngle
  */
 void BallPid_Init(void);
 void BallPid_SetTarget(float target_x);

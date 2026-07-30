@@ -4,7 +4,7 @@
 #include "API_Motor.h"                   /* API_Motor_SetSpeed */
 #include "KEY.h"                         /* Key, s_task_select */
 #include "Control_Task/Control_Task.h"   /* NonBlockDelay_t */
-#include "StepMotor.h"                   /* StepMotor_Stop */
+#include "StepMotor.h"                   /* Stepmotor_Stop */
 #include "ICM42688.h"                    /* ICM42688_GetSnapshot */
 #include "My_Usart/My_Usart.h"           /* CAM_VALID / CAM_X 宏 */
 
@@ -570,7 +570,7 @@ void Task_Stop(int16_t brakeDuty)
         API_Motor_SetSpeed(0, 0);
     }
 
-    StepMotor_Stop();
+    Stepmotor_Stop(STEPMOTOR1);
     PID_Reset(&direction_pid);
     PID_Reset(&speed_loop.left);
     PID_Reset(&speed_loop.right);

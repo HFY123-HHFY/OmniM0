@@ -9,7 +9,7 @@
 #include "jy61p.h"     /* JY61P_GetData（保留，ICM42688 为主力 IMU） */
 #include "ICM42688.h"  /* ICM42688_GetSnapshot — 偏航角主数据源  */
 #include "Encoder.h"   /* Encoder1_Speed / Encoder2_Speed    */
-#include "StepMotor.h" /* StepMotor_SetAngle — 步进电机 PID 输出执行 */
+#include "StepMotor.h" /* Stepmotor_SetAngle — 步进电机 PID 输出执行 */
 
 /* =========================================================================
  * PID 对象
@@ -310,16 +310,16 @@ int32_t BallPid_Calc(float ball_x)
 /*
  * Ball_Move_Control — 小球位置环完整控制周期（TIMG0 ISR 20ms）。
  *
- * 内部：CAM_X (float) → BallPid_Calc (×100→int) → PID → StepMotor_SetAngle。
+ * 内部：CAM_X (float) → BallPid_Calc (×100→int) → PID → Stepmotor_SetAngle。
  *
  * 调用链：
  *   TIMG0 ISR 20ms → Task_Run() → Task_3() → Ball_Move_Control()
- *     → BallPid_Calc(CAM_X) → StepMotor_SetAngle(angle)
+ *     → BallPid_Calc(CAM_X) → Stepmotor_SetAngle(angle)
  *
  * 缩放：CAM_X ×100 → int，PID 输出 ×0.000225 → 电机角度。
  * PID 参数不变，调参体验一致。
  *
- * 注意：StepMotor_SetAngle 内部发 ~14 字节 UART（~1.2ms @115200bps），
+ * 注意：Stepmotor_SetAngle 内部发 ~14 字节 UART（~1.2ms @115200bps），
  *       在 20ms ISR 槽中占比 ~6%，可接受。
  */
 void Ball_Move_Control(void)
@@ -327,5 +327,5 @@ void Ball_Move_Control(void)
     BallPid_Calc(CAM_X);           /* PID 计算，结果存入 ball_pid.output */
 
     float angle = (float)ball_pid.output * BALL_MOTOR_DEG_PER_OUTPUT;
-    StepMotor_SetAngle(angle);
+    Stepmotor_SetAngle(STEPMOTOR1, angle);
 }

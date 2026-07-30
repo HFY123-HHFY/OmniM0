@@ -5,7 +5,8 @@
 
 #include "PID/PID.h"
 #include "Filter/Filter.h"
-#include "gray_adc.h"
+#include "IR_Line.h"
+#include "gray_adc.h"   /* GrayADC_Sensor_t 类型（g_graySensor 保留兼容） */
 #include "LED.h"     /* LED_Id_t for Buzzer_Light */
 
 #ifdef __cplusplus
@@ -18,10 +19,8 @@ extern PID_EncoderSpeed_t speed_loop;
 /* 方向环（灰度循线位置 PID） */
 extern PID_TypeDef direction_pid;
 
-/* 灰度传感器实例（Control.c 定义，供 Control_Task / main 引用） */
-extern GrayADC_Sensor_t g_graySensor;
-
-/* 亚博红外传感器实例 — 当前切回感为灰度，暂时注释 */
+/* 幻尔红外传感器实例（IR_Line.c 定义，供 Control_Task / main 引用） */
+extern IRLine_Sensor_t g_irLine;
 
 /* 任务选择（KEY.c 定义，KEY2 循环 1→4） */
 extern volatile uint8_t s_task_select;
@@ -56,7 +55,7 @@ void Ball_Move_Control(void);
  * 方向环控制（TIMG0 ISR 中 5ms 调用一次）。
  *
  * 内部自动：
- *   1. 读 g_graySensor 最新线位置
+ *   1. 读 g_irLine 最新线位置
  *   2. 方向 PID 计算（整数）→ 更新全局 steer 变量
  */
 void Direction_Control(void);

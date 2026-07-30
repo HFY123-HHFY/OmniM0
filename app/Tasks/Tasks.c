@@ -1,5 +1,5 @@
 #include "Tasks.h"
-#include "Control/Control.h"             /* direction_pid, speed_loop, yaw_pid, g_graySensor */
+#include "Control/Control.h"             /* direction_pid, speed_loop, yaw_pid, g_irLine */
 #include "PID/PID.h"                     /* PID_Reset, Set_PID, PID_EncoderSpeed_Set */
 #include "API_Motor.h"                   /* API_Motor_SetSpeed */
 #include "KEY.h"                         /* Key, s_task_select */
@@ -59,7 +59,7 @@ static void Task_1(void)
 /* ══════════════════════════════════════════════════════════════════════
  * Task_2 — 速度环 + 灰度循迹环，顺时针循圆圈黑线跑一圈并计时
  *
- * 终点检测：g_graySensor.digital_bits[2] 和 [5] 同时见黑（== 0）。
+ * 终点检测：g_irLine.digital_bits[2] 和 [5] 同时见黑（== 0）。
  *   圆圈地图上起跑线横穿赛道，跑完一圈回到起点时触发。
  *
  * 计时器：KEY1 启动瞬间开始计时（秒），检测到终点停止。
@@ -108,8 +108,8 @@ static void Task_2(void)
         /* 起步冷却递减，防止起跑线被误判为终点 */
         if (s_cooldown > 0U) { s_cooldown--; }
         /* 冷却期过后才检测终点：sensor[2] 和 [5] 同时见黑 */
-        else if (g_graySensor.digital_bits[2] == 0U &&
-                 g_graySensor.digital_bits[5] == 0U)
+        else if (g_irLine.digital_bits[2] == 1U &&
+                 g_irLine.digital_bits[5] == 1U)
         {
             if (++s_confirm >= CONFIRM_CNT)
             {
@@ -466,8 +466,8 @@ static void Task_5(void)
             s_cooldown--;
         }
         /* 冷却期过后：sensor[2] 和 [5] 同时见黑 → 回到 A 点 */
-        else if (g_graySensor.digital_bits[2] == 0U &&
-                 g_graySensor.digital_bits[5] == 0U)
+        else if (g_irLine.digital_bits[2] == 1U &&
+                 g_irLine.digital_bits[5] == 1U)
         {
             if (++s_confirm >= TASK5_CONFIRM_CNT)
             {

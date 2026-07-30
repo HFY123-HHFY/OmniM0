@@ -26,10 +26,10 @@ PID_TypeDef yaw_pid;
 /* 小球位置环 PID（摄像头 X 坐标 → 电机控制） */
 PID_TypeDef ball_pid;
 
-/* 灰度传感器实例（Control.h 中 extern，供 Control_Task / main 引用） */
-GrayADC_Sensor_t g_graySensor;
+/* 幻尔红外传感器实例 — IR_Line.c 定义，此处 extern 引用（Control.h） */
 
-/* 亚博红外传感器实例 — 当前切回感为灰度，暂时注释 */
+/* 感为灰度传感器实例 — gray_adc.c 内部引用，保留兼容 */
+GrayADC_Sensor_t g_graySensor;
 
 /*
  * PID_Control_Init — 速度环 + 方向环 + 偏航角环结构初始化。
@@ -138,22 +138,21 @@ static int32_t g_steer = 0;
 /* =========================================================================
  * Direction_Control — 方向环（TIMG0 ISR 5ms）
  *
- * 灰度线位置 → 方向 PID → g_steer（整数，全部 Q16.16 计算在 PID 库内完成）
+ * 幻尔红外线位置 → 方向 PID → g_steer（整数，全部 Q16.16 计算在 PID 库内完成）
  * ========================================================================= */
 void Direction_Control(void)
 {
-    int32_t pos    = GrayADC_LinePosition(&g_graySensor);
-    int32_t center = (int32_t)(7U * GRAY_ADC_SENSOR_SPACING_MM * 100U / 2U);
+    int32_t pos    = IRLine_LinePosition(&g_irLine);
+    int32_t center = (int32_t)(7U * IRLINE_SENSOR_SPACING_MM * 100U / 2U);
 
     if (pos < 0)
     {
-        return; /* 传感器未校准/丢线，保持上一拍 steer */
+        return; /* 传感器丢线，保持上一拍 steer */
     }
 
     PID_SetTarget(&direction_pid, center);
     g_steer = -PID_Calc(&direction_pid, pos);  /* PID_Calc 返回 int32_t */
-
-    }
+}
 
 /* =========================================================================
  * MotorOutput_Clamp — 电机输出限幅到 API_MOTOR_MAX_DUTY (±4000)

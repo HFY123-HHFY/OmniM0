@@ -329,6 +329,10 @@ void Ball_Move_Control(void)
     BallPid_Calc(CAM_X);           /* PID 计算，结果存入 ball_pid.output */
 
     float angle = (float)ball_pid.output * BALL_MOTOR_DEG_PER_OUTPUT;
+
+    /* 非对称机械补偿：负目标方向需要额外推力 */
+    if (ball_pid.Target < 0) { angle *= BALL_ASYM_GAIN; }
+
     Stepmotor_SetAngle(STEPMOTOR1, angle);
 }
 
@@ -358,8 +362,13 @@ void BallTest_Control(void)
     /* ── PID 计算（目标由 BallPid_SetTarget 预设，这里只读 CAM_X）── */
     out_scaled = PID_Calc(&ball_pid, (int32_t)(CAM_X * BALL_PID_SCALE));
 
-    /* ── 输出 → 电机角度，限幅后发送 ── */
+    /* ── 输出 → 电机角度 ── */
     angle = (float)out_scaled * BALL_MOTOR_DEG_PER_OUTPUT;
+
+    /* 非对称机械补偿：负目标方向需要额外推力 */
+    if (ball_pid.Target < 0) { angle *= BALL_ASYM_GAIN; }
+
+    /* ── 限幅后发送 ── */
     if (angle > BALL_ANGLE_MAX)  angle = BALL_ANGLE_MAX;
     if (angle < BALL_ANGLE_MIN)  angle = BALL_ANGLE_MIN;
 

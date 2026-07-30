@@ -48,9 +48,10 @@ void YawTest_Control(void);             /* 偏航角单独测试（纯差速，�
  * BallTest_Control: 单独测试 — CAM_X → PID(目标=0) → Stepmotor_SetAngle，丢球跳过
  */
 
-/* 步进电机输出角度限幅 */
+/* 步进电机输出限幅 + 非对称补偿 */
 #define BALL_ANGLE_MAX     20.0f    /* 电机正方向最大角度（°） */
 #define BALL_ANGLE_MIN    -20.0f    /* 电机负方向最大角度（°） */
+#define BALL_ASYM_GAIN     1.3f    /* 负目标输出补偿系数（>1=负方向多推）*/
 
 void BallPid_Init(void);
 void BallPid_SetTarget(float target_x);

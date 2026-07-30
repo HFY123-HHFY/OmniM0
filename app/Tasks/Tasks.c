@@ -168,6 +168,7 @@ static void Task_3(void)
         s_state       = PHASE_TO_P5;
         s_confirm_cnt = 0U;
 
+        PID_Reset(&ball_pid);                                 /* 清 I 项 */
         Set_PID(&ball_pid, -15.0f, -25.0f, -35.0f);
         BallPid_SetTarget(5.0f);         /* 第一阶段：X = +5.0 */
     }
@@ -202,6 +203,7 @@ static void Task_3(void)
                 if (++s_confirm_cnt >= CONFIRM_TICKS)
                 {
                     s_confirm_cnt = 0U;
+                    PID_Reset(&ball_pid);          /* 切方向：清 I 项防震荡 */
                     BallPid_SetTarget(-5.0f);   /* 切换目标：X = -5.0 */
                     s_state = PHASE_TO_N5;
                 }

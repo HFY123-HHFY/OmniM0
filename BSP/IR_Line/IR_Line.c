@@ -1,22 +1,29 @@
 /*
- * IR_Line.c — 幻尔 八路红外巡线模块 UART 驱动
+ * IR_Line.c — 幻尔 八路红外巡线模块 ADC 直读驱动
  *
  * 硬件背景：
- *   - 通信方式：UART（API_USART4, 115200 bps）
- *   - 数字电平模式：模块收到 0x01 后持续发送单字节（每 bit = 1 个探头）
- *   - 模拟值模式：  模块收到 0x02 后持续发送帧格式（0x55 0xAA ...）
+ *   - 模块自带 MCU + 校准按键，软件侧无需重复校准
+ *   - 74HC4051 模拟开关 + 8 路红外对管
+ *   - OUT 引脚 → G3507 ADC1 CH0（PB20）
  *
  * 架构约定（遵循 OmniM0 分层规范）：
- *   - 串口资源由 Enroll 注册层统一管理（API_USART4）
- *   - ISR 上半部：IRLine_RxPush() — 环形缓冲入队（< 1µs）
- *   - ISR 下半部：IRLine_Task() — TIMG0 5ms 槽解析（< 5µs）
- *   - BSP 层不直接写寄存器，通过 API_USART 操作
+ *   - GPIO/ADC 与 GrayADC 物理复用，由 GrayADC_Init 统一初始化
+ *   - 通道切换复用 GrayADC_SelectChannel()
+ *   - ADC 读取通过 API_ADC_GetValue()
+ *   - BSP 层不直接写寄存器
  */
 
 #include "IR_Line.h"
-#include "usart.h"              /* USART4 宏定义         */
-#include "My_Usart/My_Usart.h"  /* usart_printf / USART1~4 */
-#include "ti/driverlib/dl_uart_main.h"  /* DL_UART_transmitData（非阻塞 TX） */
+#include "gray_adc.h"           /* GrayADC_SelectChannel */
+#include "adc.h"                /* API_ADC_GetValue */
+#include "My_Usart/My_Usart.h"  /* usart_printf */
+
+/* ADC 实例与通道，与 GrayADC 保持一致 */
+#define ADC_INST   API_ADC1
+#define ADC_CH     API_ADC_CH0
+
+/* 每通道过采样次数（均值滤波，抑制电源噪声） */
+#define SAMPLES    4U
 
 /*===========================================================================
  * 全局传感器实例
@@ -24,87 +31,87 @@
 IRLine_Sensor_t g_irLine;
 
 /*===========================================================================
- * 环形缓冲区（中断上半部/下半部共享）
+ * IRLine_Init — 初始化传感器结构体
+ *
+ * 仅清零结构体字段 + 设置默认 EMA 滤波中心位置。
+ * GPIO 三根地址线（AD0/AD1/AD2）由 GrayADC_Init 已配置为推挽输出，
+ * 本函数不重复操作硬件，避免覆盖 GrayADC 的初始化状态。
+ *
+ * 调用时机：GrayADC_Init 之后、TIMG0 启动之前。
  *===========================================================================*/
-#define IRLINE_RX_BUF_SIZE  64U    /* 数字模式每秒仅 ~20-100 字节，64 足够 */
-
-static uint8_t           s_rx_buf[IRLINE_RX_BUF_SIZE];
-static volatile uint16_t s_rx_head = 0U;  /* ISR 写索引 */
-static uint16_t          s_rx_tail = 0U;  /* Task 读索引 */
-
-/*===========================================================================
- * IRLine_RxPush — ISR 调用：仅入队（中断上半部）
- *===========================================================================*/
-
-void IRLine_RxPush(uint8_t data)
+void IRLine_Init(IRLine_Sensor_t *sensor)
 {
-    uint16_t next = (uint16_t)((s_rx_head + 1U) % IRLINE_RX_BUF_SIZE);
+    uint8_t i;
 
-    s_rx_buf[s_rx_head] = data;
-    s_rx_head            = next;
+    if (sensor == 0) { return; }
 
-    /* 缓冲满 → 丢弃最老 1 字节（滑动窗口，防止死锁） */
-    if (next == s_rx_tail)
+    /* ── 所有字段清零 ── */
+    for (i = 0U; i < 8U; i++)
     {
-        s_rx_tail = (uint16_t)((s_rx_tail + 1U) % IRLINE_RX_BUF_SIZE);
+        sensor->raw_value[i]    = 0U;
+        sensor->digital_bits[i] = 0U;  /* 默认白线（未探到黑线） */
     }
+    sensor->digital       = 0U;
+    sensor->pos_filtered  = (int32_t)(7U * IRLINE_SENSOR_SPACING_MM * 100U / 2U);
+    sensor->data_ready    = 0U;
+    sensor->frame_updated = 0U;
 }
 
 /*===========================================================================
- * IRLine_Task — TIMG0 ISR 5ms 调用：解析最新字节（中断下半部）
+ * IRLine_Task — 传感器主任务（TIMG0 ISR 5ms 槽调用）
  *
- * 数字电平模式下，模块持续发送单字节。
- * 每 5ms 取缓冲中最新的字节作为当前传感器状态。
- * 如果无新数据，保留上一拍状态。
+ * 完整流程：
+ *   1. 遍历 8 通道
+ *      a) GrayADC_SelectChannel(ch) — 切换 74HC4051 地址线
+ *      b) 4 次 ADC 过采样取均值 — 抑制随机噪声
+ *      c) 存入 sensor->raw_value[ch]
+ *
+ *   2. 固定阈值二值化
+ *      raw > IRLINE_THRESHOLD → digital_bits = 1（黑线）
+ *      raw ≤ IRLINE_THRESHOLD → digital_bits = 0（白线）
+ *
+ *   3. 构建合并字节 sensor->digital（bit0=S0 ... bit7=S7）
+ *
+ * 耗时：约 40µs @80MHz（8 × 4 × ADC 采样），ISR 安全。
+ * 阈值 IRLINE_THRESHOLD 在 IR_Line.h 中配置，不会覆盖模块按键校准结果。
  *===========================================================================*/
-
 void IRLine_Task(IRLine_Sensor_t *sensor)
 {
-    uint8_t  latest;
-    uint8_t  has_new;
+    uint8_t  ch, s;
+    uint32_t sum;
     uint8_t  i;
 
-    if (sensor == 0)
+    if (sensor == 0) { return; }
+
+    /* ── 第 1 步：采集 8 路原始 ADC ── */
+    for (ch = 0U; ch < 8U; ch++)
     {
-        return;
+        GrayADC_SelectChannel(ch);          /* 74HC4051 地址线切换 */
+        sum = 0UL;
+        for (s = 0U; s < SAMPLES; s++)
+        {
+            sum += (uint32_t)API_ADC_GetValue(ADC_INST, ADC_CH);
+        }
+        sensor->raw_value[ch] = (uint16_t)(sum / SAMPLES);
     }
 
-    /* ── 消费环形缓冲，保留最后一个字节 ── */
-    has_new = 0U;
-    latest  = 0U;
-
-    while (s_rx_tail != s_rx_head)
-    {
-        latest   = s_rx_buf[s_rx_tail];
-        s_rx_tail = (uint16_t)((s_rx_tail + 1U) % IRLINE_RX_BUF_SIZE);
-        has_new  = 1U;
-    }
-
-    if (has_new == 0U)
-    {
-        sensor->frame_updated = 0U;
-        return;
-    }
-
-    /* ── 解析单字节为 8 路数字状态 ── */
+    /* ── 第 2 步：固定阈值二值化 ── */
     for (i = 0U; i < 8U; i++)
     {
-#if IRLINE_INVERT_DIGITAL
         /*
-         * 模块原始：bit=1 → 黑线
-         * 取反后：  bit=0 → 黑线（在线），符合项目惯例
+         * 注意：模块原始逻辑为"越黑 → ADC 值越小（红外反射弱）"。
+         * 但幻尔模块可能做了信号调理，实际极性以实测为准。
+         * 如果二值化结果反了（黑白颠倒），修改 IRLINE_THRESHOLD
+         * 的比较方向或阈值大小即可。
          */
-        sensor->digital_bits[i] = ((latest >> i) & 0x01U) ? 0U : 1U;
-#else
-        sensor->digital_bits[i] = (uint8_t)((latest >> i) & 0x01U);
-#endif
+        sensor->digital_bits[i] = (sensor->raw_value[i] > IRLINE_THRESHOLD) ? 1U : 0U;
     }
 
-    /* 构建合并字节：bit0=S0 ... bit7=S7 */
+    /* ── 第 3 步：构建合并字节 ── */
     sensor->digital = 0U;
     for (i = 0U; i < 8U; i++)
     {
-        if (sensor->digital_bits[i] == 0U)
+        if (sensor->digital_bits[i] != 0U)
         {
             sensor->digital |= (uint8_t)(1U << i);
         }
@@ -115,60 +122,14 @@ void IRLine_Task(IRLine_Sensor_t *sensor)
 }
 
 /*===========================================================================
- * IRLine_Init — 初始化：发送模式指令，模块开始自动上报
- *===========================================================================*/
-
-void IRLine_Init(IRLine_Sensor_t *sensor)
-{
-    uint8_t  i;
-    uint16_t j;
-
-    if (sensor == 0)
-    {
-        return;
-    }
-
-    /* ── 结构体清零 ── */
-    for (i = 0U; i < 8U; i++)
-    {
-        sensor->digital_bits[i] = 1U;  /* 默认全白（离线），安全初始值 */
-    }
-    sensor->digital       = 0xFFU;
-    sensor->pos_filtered  = (int32_t)(7U * IRLINE_SENSOR_SPACING_MM * 100U / 2U);
-    sensor->data_ready    = 0U;
-    sensor->frame_updated = 0U;
-
-    /* ── 清空环形缓冲 ── */
-    s_rx_head = 0U;
-    s_rx_tail = 0U;
-    for (j = 0U; j < IRLINE_RX_BUF_SIZE; j++)
-    {
-        s_rx_buf[j] = 0U;
-    }
-
-    /*
-     * 发送模式指令，模块进入数字电平自动上报模式。
-     *
-     * 直接写 USART4 TXDATA，不经过 TI DriverLib 的 BUSY 死等。
-     * （DL_UART_transmitDataBlocking 会在写完数据后 while(BUSY)，
-     *   如果 USART4 引脚/时钟有问题，BUSY 永远不清零 → 卡死。）
-     */
-    while (DL_UART_isTXFIFOFull(USART4)) {}   /* 等 FIFO 有空位（正常立刻过） */
-    DL_UART_transmitData(USART4, IRLINE_INIT_CMD);
-    /* 不等 BUSY */
-}
-
-/*===========================================================================
- * 调试打印
- *===========================================================================*/
-
-/*
- * 打印 8 路二值化 bits（纯 0/1）。
- * 输出格式：D:00111100
+ * IRLine_PrintBits — 打印 8 路二值化 bits 到指定串口
  *
- * 解读：0=黑（在线上），1=白（离线）
- *   例 00111100 → 中间 4 路（S2~S5）看到黑线，两侧看到白
- */
+ * 输出格式：D:00111100
+ *   1 = 黑线（探到），0 = 白线（未探到）
+ *
+ * 调用示例：
+ *   IRLine_PrintBits(&g_irLine, USART1);  // 输出到板载串口
+ *===========================================================================*/
 void IRLine_PrintBits(const IRLine_Sensor_t *sensor, void *usart)
 {
     if (sensor == 0) { return; }
@@ -182,41 +143,41 @@ void IRLine_PrintBits(const IRLine_Sensor_t *sensor, void *usart)
 }
 
 /*===========================================================================
- * 巡线位置计算（供 PID 巡线控制使用）
- *===========================================================================*/
-
-/*
- * 计算黑线位置 — 加权平均法 + EMA 低通滤波。
+ * IRLine_LinePosition — 计算黑线加权中心位置 + EMA 低通滤波
  *
- * 原理：
- *   传感器排列（间距 12mm，8 路从左到右）：
- *    [S0] [S1] [S2] [S3] [S4] [S5] [S6] [S7]
+ * 传感器物理排列（间距 12mm，8 路从左到右）：
+ *   [S0]  [S1]  [S2]  [S3]  [S4]  [S5]  [S6]  [S7]
  *     0   1200  2400  3600  4800  6000  7200  8400  ← mm × 100
  *
- *   黑线处 digital_bits[i] = 0 → 权重 = 1
- *   白线处 digital_bits[i] = 1 → 权重 = 0
+ * 加权公式：
+ *   pos = Σ( digital_bits[i] × i × spacing × 100 ) / Σ( digital_bits[i] )
  *
- *   加权公式：
- *     pos = Σ( weight[i] * i * spacing * 100 ) / Σ( weight[i] )
+ * 其中 digital_bits[i] = 1（黑线）→ 权重 = 1
+ *      digital_bits[i] = 0（白线）→ 权重 = 0
  *
- *   再经 EMA 低通：
- *     filtered = filtered * (1 - 1/N) + pos * (1/N)
+ * EMA 低通滤波：
+ *   filtered = filtered × (1 - 1/N) + raw × (1/N)
  *
- *   丢线保护：全白时保持上一次有效位置。
- */
+ * 丢线保护：
+ *   全白（total == 0）→ 返回上一次有效位置，车不会乱转。
+ *
+ * 返回值：
+ *   [0, 7×spacing×100] — 黑线加权中心位置（单位 0.01mm）
+ *   -1                 — sensor 无效 / 从未收到数据
+ *===========================================================================*/
 int32_t IRLine_LinePosition(IRLine_Sensor_t *sensor)
 {
     int32_t        weighted   = 0;
     int32_t        total      = 0;
     int32_t        rawPos;
     const int32_t  step       = (int32_t)(IRLINE_SENSOR_SPACING_MM * 100UL);
-    const int32_t  maxPos     = 7 * step;
-    const int32_t  centerPos  = maxPos / 2;
+    const int32_t  maxPos     = 7 * step;      /* 最右位置 */
+    const int32_t  centerPos  = maxPos / 2;    /* 居中位置 */
     uint8_t        i;
 
     if ((sensor == 0) || (sensor->data_ready == 0U))
     {
-        return -1;
+        return -1;  /* 传感器未就绪 */
     }
 
     /* 首次调用 → 初始化为居中 */
@@ -225,9 +186,10 @@ int32_t IRLine_LinePosition(IRLine_Sensor_t *sensor)
         sensor->pos_filtered = centerPos;
     }
 
+    /* 加权累加：黑线探头参与计算 */
     for (i = 0U; i < 8U; i++)
     {
-        if (sensor->digital_bits[i] == 0U)   /* 0 = 黑线（在线） */
+        if (sensor->digital_bits[i] != 0U)   /* 1 = 黑线 */
         {
             weighted += (int32_t)i * step;
             total    += 1;
@@ -242,10 +204,12 @@ int32_t IRLine_LinePosition(IRLine_Sensor_t *sensor)
 
     rawPos = weighted / total;
 
+    /* 限幅到有效范围 */
     if (rawPos < 0)      { rawPos = 0; }
     if (rawPos > maxPos) { rawPos = maxPos; }
 
 #if IRLINE_POSITION_SMOOTHING > 0U
+    /* EMA 低通：filtered = filtered × (1 - 1/N) + raw × (1/N) */
     sensor->pos_filtered = sensor->pos_filtered
                  - sensor->pos_filtered / (int32_t)(IRLINE_POSITION_SMOOTHING)
                  + rawPos                / (int32_t)(IRLINE_POSITION_SMOOTHING);

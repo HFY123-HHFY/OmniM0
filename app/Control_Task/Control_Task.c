@@ -52,8 +52,8 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     if (tick_5ms >= 5U)
     {
         tick_5ms = 0U;
-        GrayADC_Task(&g_graySensor);
-	    // IRLine_Task(&g_irLine);           /* 幻尔红外 串口帧解析 */
+        // GrayADC_Task(&g_graySensor); /* 感为无MCU灰度 */
+        IRLine_Task(&g_irLine);         /* 幻尔八路红外循迹 */
 
         ICM42688_ReadSensor();            /* ICM42688 6轴 burst读 + 偏航积分 */
         Direction_Control();              /* 灰度环PID计算输出 */

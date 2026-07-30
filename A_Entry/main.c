@@ -145,7 +145,8 @@ int main(void)
 		if (tasks.print_50ms.flag)
 		{
 			tasks.print_50ms.flag = false;
-			// IRLine_PrintBits(&g_irLine, USART1);
+			IRLine_PrintBits(&g_irLine, USART1);
+			// GrayADC_PrintBits(&g_graySensor, USART1); 
 			// GrayADC_PrintRaw(&g_graySensor, USART3); /* 校准感为灰度 */ 
 		}
 #endif
@@ -162,17 +163,17 @@ int main(void)
 			OLED_Printf(0, 16, OLED_6X8, "yaw: %.2f", g_icm42688.yaw); /* 偏航角 */
 			OLED_Printf(0, 48, OLED_6X8, "L%+d R%+d", Encoder1_Speed, Encoder2_Speed); /* 左右电机速度 */
 
-			OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-			g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
-			g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
-			g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
-			g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); /* 灰度传感器数字量 */
-
 			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-			// g_irLine.digital_bits[0], g_irLine.digital_bits[1],
-			// g_irLine.digital_bits[2], g_irLine.digital_bits[3],
-			// g_irLine.digital_bits[4], g_irLine.digital_bits[5],
-			// g_irLine.digital_bits[6], g_irLine.digital_bits[7]);
+			// g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
+			// g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
+			// g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
+			// g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); /* 灰度传感器数字量 */
+
+			OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
+			g_irLine.digital_bits[0], g_irLine.digital_bits[1],
+			g_irLine.digital_bits[2], g_irLine.digital_bits[3],
+			g_irLine.digital_bits[4], g_irLine.digital_bits[5],
+			g_irLine.digital_bits[6], g_irLine.digital_bits[7]); /* 红外传感器数字量 */
 
 			// OLED_Printf(32, 0, OLED_6X8, "Y%+d", yaw_pid.output);
 			// OLED_Printf(64, 0, OLED_6X8, "D%+d", direction_pid.output);

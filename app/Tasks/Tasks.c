@@ -128,23 +128,24 @@ static void Task_2(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════
- * Task_3 — 小球位置控制：0 → +5 → -5
+ * Task_3 — 小球位置控制：0 → +5 → -5（纯小球，不涉及小车）
  *
- * 摄像头识别小球 X 轴位置（CAM_X = g_cam_data[1]），位置 PID 控制轨道倾斜电机，
- * 使小球沿半圆弧轨道移动到指定坐标并稳定。
+ * 摄像头 CAM_X → 小球位置 PID → 步进电机倾斜轨道，
+ * 使小球沿半圆弧轨道依次移动到 +5 和 -5 并稳定。
+ *
+ * 全程小车静止，不碰 DC 电机/速度环/方向环/偏航环。
  *
  * 阶段：
- *   PHASE_TO_P5      — 0 → +5，PID 跟踪直到到达阈值内
- *   PHASE_CONFIRM_P5  — 在 +5 处稳定确认（消抖）
- *   PHASE_TO_N5       — +5 → -5，切换目标到 -5
- *   PHASE_CONFIRM_N5  — 在 -5 处稳定确认
- *   PHASE_DONE        — 完成，停车
+ *   PHASE_TO_P5       — 0 → +5，PID 跟踪直到到达阈值内
+ *   PHASE_CONFIRM_P5   — 在 +5 处稳定确认（消抖），然后切目标到 -5
+ *   PHASE_TO_N5        — +5 → -5，PID 跟踪
+ *   PHASE_CONFIRM_N5   — 在 -5 处稳定确认
+ *   PHASE_DONE         — 完成，继续保持当前位置
  *
  * 调用频率：TIMG0 ISR 20ms（由 Task_Run 分发）。
  * ══════════════════════════════════════════════════════════════════════ */
 static void Task_3(void)
 {
-    /* ── 状态机枚举 ── */
     enum {
         PHASE_TO_P5 = 0U,
         PHASE_CONFIRM_P5,
@@ -153,26 +154,22 @@ static void Task_3(void)
         PHASE_DONE
     };
 
-    /* ── 阈值常量 ── */
-    #define STABLE_THRESHOLD   1.0f    /* 到达判定：|error| ≤ 1.0（摄像头分辨率级） */
-    #define CONFIRM_TICKS      25U     /* 稳定确认：25×20ms = 500ms            */
+    #define STABLE_THRESHOLD   1.0f    /* 到达判定：|error| ≤ 1.0  */
+    #define CONFIRM_TICKS      25U     /* 稳定确认：25×20ms=500ms */
 
-    /* ── 静态状态变量（由 s_gen 感知重启）── */
     static uint8_t  s_state       = PHASE_TO_P5;
     static uint8_t  s_last_gen    = 0U;
     static uint8_t  s_confirm_cnt = 0U;
 
-    /* ── 首次启动 / KEY1 重新启动 ── */
+    /* ── KEY1 重新启动 ── */
     if (s_last_gen != s_gen)
     {
         s_last_gen    = s_gen;
         s_state       = PHASE_TO_P5;
         s_confirm_cnt = 0U;
 
-        /* 小球位置环结构已由 PID_Control_Init 初始化，这里只需设参数 */
-        /* kp=400: 误差 5 单位 → 2000 duty；ki=20: 慢速消静差；kd=15: 阻尼 */
-        Set_PID(&ball_pid, 400.0f, 20.0f, 15.0f);
-        BallPid_SetTarget(5.0f);         /* 第一阶段目标：X = +5.0 */
+        Set_PID(&ball_pid, -15.0f, -25.0f, -35.0f);
+        BallPid_SetTarget(5.0f);         /* 第一阶段：X = +5.0 */
     }
 
     switch (s_state)
@@ -182,30 +179,22 @@ static void Task_3(void)
             {
                 Ball_Move_Control();
 
-                /* 判断是否到达 +5 */
-                {
-                    float error = CAM_X - 5.0f;
-                    if (error < 0.0f) error = -error;   /* abs(error) */
+                float error = CAM_X - 5.0f;
+                if (error < 0.0f) error = -error;
 
-                    if (error <= STABLE_THRESHOLD)
+                if (error <= STABLE_THRESHOLD)
+                {
+                    if (++s_confirm_cnt >= CONFIRM_TICKS)
                     {
-                        if (++s_confirm_cnt >= CONFIRM_TICKS)
-                        {
-                            s_confirm_cnt = 0U;
-                            s_state       = PHASE_CONFIRM_P5;
-                        }
-                    }
-                    else
-                    {
-                        s_confirm_cnt = 0U;   /* 离开阈值则重置消抖计数 */
+                        s_confirm_cnt = 0U;
+                        s_state       = PHASE_CONFIRM_P5;
                     }
                 }
+                else { s_confirm_cnt = 0U; }
             }
-            /* else: 丢球，保持当前位置，冻结 PID 和状态机 */
             break;
 
         case PHASE_CONFIRM_P5:
-            /* 在 +5 稳定后短暂保持（给一次确认周期），然后切目标 */
             if (CAM_VALID > 0.5f)
             {
                 Ball_Move_Control();
@@ -213,11 +202,10 @@ static void Task_3(void)
                 if (++s_confirm_cnt >= CONFIRM_TICKS)
                 {
                     s_confirm_cnt = 0U;
-                    BallPid_SetTarget(-5.0f);    /* 切换目标：X = -5.0 */
+                    BallPid_SetTarget(-5.0f);   /* 切换目标：X = -5.0 */
                     s_state = PHASE_TO_N5;
                 }
             }
-            /* else: 丢球，保持当前位置，冻结 PID 和状态机 */
             break;
 
         case PHASE_TO_N5:
@@ -225,30 +213,22 @@ static void Task_3(void)
             {
                 Ball_Move_Control();
 
-                /* 判断是否到达 -5 */
-                {
-                    float error = CAM_X - (-5.0f);
-                    if (error < 0.0f) error = -error;
+                float error = CAM_X - (-5.0f);
+                if (error < 0.0f) error = -error;
 
-                    if (error <= STABLE_THRESHOLD)
-                    {
-                        if (++s_confirm_cnt >= CONFIRM_TICKS)
-                        {
-                            s_confirm_cnt = 0U;
-                            s_state       = PHASE_CONFIRM_N5;
-                        }
-                    }
-                    else
+                if (error <= STABLE_THRESHOLD)
+                {
+                    if (++s_confirm_cnt >= CONFIRM_TICKS)
                     {
                         s_confirm_cnt = 0U;
+                        s_state       = PHASE_CONFIRM_N5;
                     }
                 }
+                else { s_confirm_cnt = 0U; }
             }
-            /* else: 丢球，保持当前位置，冻结 PID 和状态机 */
             break;
 
         case PHASE_CONFIRM_N5:
-            /* 在 -5 稳定确认后完成任务 */
             if (CAM_VALID > 0.5f)
             {
                 Ball_Move_Control();
@@ -256,14 +236,17 @@ static void Task_3(void)
                 if (++s_confirm_cnt >= CONFIRM_TICKS)
                 {
                     s_state = PHASE_DONE;
-                    Task_Stop(0);               /* 步进电机已控，DC 电机直接停 */
                 }
             }
-            /* else: 丢球，保持当前位置，冻结 PID 和状态机 */
             break;
 
         case PHASE_DONE:
-            break;   /* 已完成，Task_Stop 已停车 */
+            /* 完成：继续保持 -5，PID 稳定小球，不碰小车 */
+            if (CAM_VALID > 0.5f)
+            {
+                Ball_Move_Control();
+            }
+            break;
     }
 }
 
@@ -320,7 +303,7 @@ static void Task_4(void)
         Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
 
         /* ── 小球位置环：目标 X=0（始终控制）── */
-        Set_PID(&ball_pid, 400.0f, 20.0f, 15.0f);
+        Set_PID(&ball_pid, -20.0f, -23.0f, -35.0f);
         BallPid_SetTarget(0.0f);
     }
 
@@ -467,7 +450,7 @@ static void Task_CruiseWithBall(float ball_target)
         Set_PID(&direction_pid, 0.50f, 0.15f, 0.010f);
 
         /* ── 小球位置环：目标由参数指定 ── */
-        Set_PID(&ball_pid, 400.0f, 20.0f, 15.0f);
+        Set_PID(&ball_pid, -20.0f, -23.0f, -35.0f);
         BallPid_SetTarget(ball_target);
     }
 

@@ -106,7 +106,8 @@ int main(void)
 	// Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
 	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f); /* 偏航环 */
 	// Set_PID(&ball_pid, 150.0f, 10.0f, 10.0f);  /* 小球位置环：中kp, 轻ki消静差, 轻kd */
-	Set_PID(&ball_pid, -20.0f, -10.0f, -10.0f);  /* 小球位置环：1单位≈1.6°, 满偏12单位≈18° */
+	Set_PID(&ball_pid, -20.0f, -23.0f, -35.0f);  /* 小球位置环 */
+	BallPid_SetTarget(0.0f);                      /* 目标 X */
 
 	Buzzer_Beep(100);
 

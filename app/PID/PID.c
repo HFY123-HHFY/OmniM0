@@ -307,11 +307,10 @@ static int32_t pid_calc_position(PID_TypeDef* pid, int32_t actual, int32_t dt_q1
     pid->Actual = actual;
     error = pid->Target - pid->Actual;
 
-    /* ── 2. 死区：小误差按 0 处理，减少电机微振 ── */
+    /* ── 2. 死区：进死区仅慢速泄放 I 项，P/D 照常工作（避免边界突变引发振荡）── */
     should_integrate = 1;
     if ((pid->deadband > 0) && (pid_abs(error) <= pid->deadband))
     {
-        error = 0;
         /* I 项每拍衰减 10% 防止回到中心后残留积分推着电机继续转 */
         pid->error_sum = (pid->error_sum * Q16_09) >> PID_Q;
     }

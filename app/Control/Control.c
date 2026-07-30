@@ -335,8 +335,9 @@ void Ball_Move_Control(void)
 /*
  * BallTest_Control — 小球方向环单独测试（摄像头数据源）
  *
- * 数据流：CAM_X → PID_Calc(目标=0) → Stepmotor_SetAngle。
- * 目标固定为 X=0.0（保持小球在轨道中心），用于测试 PID 极性和参数。
+ * 数据流：CAM_X → PID_Calc → Stepmotor_SetAngle。
+ * 目标由外部 BallPid_SetTarget() 设置（默认 0.0 = 轨道中心），
+ * 和 YawTest_Control / Direction_Test_Control 一致：ISR 只做计算，不设目标。
  *
  * 丢球保护：CAM_VALID ≤ 0.5 时跳过控制，电机保持当前位置，防止追噪声。
  * 输出限幅：BALL_ANGLE_MAX / BALL_ANGLE_MIN 限制电机角度范围。
@@ -354,8 +355,7 @@ void BallTest_Control(void)
         return;
     }
 
-    /* ── 目标 X=0.0 + PID 计算 ── */
-    PID_SetTarget(&ball_pid, 0);
+    /* ── PID 计算（目标由 BallPid_SetTarget 预设，这里只读 CAM_X）── */
     out_scaled = PID_Calc(&ball_pid, (int32_t)(CAM_X * BALL_PID_SCALE));
 
     /* ── 输出 → 电机角度，限幅后发送 ── */

@@ -31,7 +31,7 @@
  * 常量与配置
  *===========================================================================*/
 
-#define STEPMOTOR_USART        API_USART3    /* 步进电机串口         */
+#define STEPMOTOR_USART        API_USART2    /* 步进电机串口         */
 #define MOTOR_CHECKSUM         0x6BU         /* 协议固定校验字节      */
 
 /* ── 电机参数 ── */

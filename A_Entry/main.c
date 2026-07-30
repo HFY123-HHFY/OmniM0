@@ -66,15 +66,12 @@ int main(void)
 	/* ══════════════════════════════════════════════════════════════════
 	 * 阶段 2：外设硬件初始化
 	 * ══════════════════════════════════════════════════════════════════ */
-	API_USART_Init(API_USART1, 115200U);
-	API_USART_Init(API_USART2, 115200U);
-	API_USART_Init(API_USART3, 115200U);
-	API_USART_Init(API_USART4, 115200U);
-	API_PWM_Init(API_PWM_TIM1, 4000U - 1U, 1U - 1U);
-	API_PWM_Init(API_PWM_TIM2, 4000U - 1U, 1U - 1U);
-	// API_PWM_Init(API_PWM_TIM3, 4000U - 1U, 1U - 1U); /* TIMA0@PD1 电机B相 */
-	// API_PWM_Init(API_PWM_TIM4, 4000U - 1U, 1U - 1U); /* TIMA1@PD1 预留PWM */
-	// API_PWM_Init(API_PWM_TIM5, 2000U - 1U, 1U - 1U); /* TIMG8@PD0 预留PWM */
+	API_USART_Init(API_USART1, 115200U); /* U1 板载串口调试 */
+	API_USART_Init(API_USART2, 115200U); /* U2 步进电机 */
+	API_USART_Init(API_USART3, 115200U); /* U3 无线串口调试 */
+	API_USART_Init(API_USART4, 115200U); /* U4 摄像头 */
+	API_PWM_Init(API_PWM_TIM1, 4000U - 1U, 1U - 1U); /* 电机A相 */
+	API_PWM_Init(API_PWM_TIM2, 4000U - 1U, 1U - 1U); /* 电机B相 */
 	API_ADC_Init(API_ADC1);
 	GrayADC_Init();
 
@@ -94,8 +91,8 @@ int main(void)
 	API_Encoder_Init(API_ENCODER_1);
 	API_Encoder_Init(API_ENCODER_2);
 	PID_Control_Init();
-	// IRLine_Init(&g_irLine);
-	// StepMotor_Init(0x01);
+	IRLine_Init(&g_irLine);
+	StepMotor_Init(0x01);
 
 	/* ══════════════════════════════════════════════════════════════════
 	 * 阶段 4：启动系统时基
@@ -112,16 +109,15 @@ int main(void)
 	// StepMotor_SetZero(1);
 	// usart_printf(USART1, "Zero Set OK\r\n");
 
-	// StepMotor_Enable();
-	// StepMotor_GoHome(3000U);
-	// StepMotor_ConfigMove(250.0f, 200.0f);  // 最大 250RPM，加速 200RPM/s, 设置步进电机转速
+	StepMotor_Enable();
+	StepMotor_GoHome(3000U);
+	StepMotor_ConfigMove(250.0f, 200.0f);  // 最大 250RPM，加速 200RPM/s, 设置步进电机转速
 
-	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f);
-	// Set_PID(&direction_pid,  0.80f, 0.0f, 0.015f);
-	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f);
+	// PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, 20.0f); /* 速度环 */
+	// Set_PID(&direction_pid,  0.80f, 0.0f, 0.015f); /* 循迹环 */
+	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f); /* 偏航环 */
 
 	Buzzer_Beep(100);
-	usart_printf(USART1, "OmniM0 Ready\r\n");
 
 	while (1)
 	{
@@ -150,7 +146,7 @@ int main(void)
 		{
 			tasks.print_50ms.flag = false;
 			// IRLine_PrintBits(&g_irLine, USART1);
-			// GrayADC_PrintRaw(&g_graySensor, USART3);
+			// GrayADC_PrintRaw(&g_graySensor, USART3); /* 校准感为灰度 */ 
 		}
 #endif
 

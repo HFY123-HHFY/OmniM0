@@ -144,66 +144,6 @@ void G3507_PWM_ConfigPin(uint8_t coreTimId, uint8_t coreChannel)
 		}
 		return;
 	}
-
-	/* ── TIMA0 引脚（PB13=CCP3, PB9=CCP1, TIM3）── */
-	// if (coreTimId == API_PWM_CORE_TIMA0)
-	// {
-	// 	if (coreChannel == API_PWM_CORE_CCP1)
-	// 	{
-	// 		DL_GPIO_initPeripheralOutputFunction(G3507_PWM2_CCP1_IOMUX,
-	// 		                                     G3507_PWM2_CCP1_FUNC);
-	// 		DL_GPIO_enableOutput(G3507_PWM2_CCP1_PORT,
-	// 		                     G3507_PWM2_CCP1_PIN);
-	// 	}
-	// 	else if (coreChannel == API_PWM_CORE_CCP3)
-	// 	{
-	// 		DL_GPIO_initPeripheralOutputFunction(G3507_PWM2_CCP3_IOMUX,
-	// 		                                     G3507_PWM2_CCP3_FUNC);
-	// 		DL_GPIO_enableOutput(G3507_PWM2_CCP3_PORT,
-	// 		                     G3507_PWM2_CCP3_PIN);
-	// 	}
-	// 	return;
-	// }
-
-	/* ── TIMA1 引脚（PA28=CCP0, PA31=CCP1, TIM4）── */
-	if (coreTimId == API_PWM_CORE_TIMA1)
-	{
-		if (coreChannel == API_PWM_CORE_CCP0)
-		{
-			DL_GPIO_initPeripheralOutputFunction(G3507_PWM3_CCP0_IOMUX,
-			                                     G3507_PWM3_CCP0_FUNC);
-			DL_GPIO_enableOutput(G3507_PWM3_CCP0_PORT,
-			                     G3507_PWM3_CCP0_PIN);
-		}
-		else if (coreChannel == API_PWM_CORE_CCP1)
-		{
-			DL_GPIO_initPeripheralOutputFunction(G3507_PWM3_CCP1_IOMUX,
-			                                     G3507_PWM3_CCP1_FUNC);
-			DL_GPIO_enableOutput(G3507_PWM3_CCP1_PORT,
-			                     G3507_PWM3_CCP1_PIN);
-		}
-		return;
-	}
-
-	/* ── TIMG8 引脚（PA29=CCP0, PA30=CCP1, TIM5, PD0）── */
-	if (coreTimId == API_PWM_CORE_TIMG8)
-	{
-		if (coreChannel == API_PWM_CORE_CCP0)
-		{
-			DL_GPIO_initPeripheralOutputFunction(G3507_PWM4_CCP0_IOMUX,
-			                                     G3507_PWM4_CCP0_FUNC);
-			DL_GPIO_enableOutput(G3507_PWM4_CCP0_PORT,
-			                     G3507_PWM4_CCP0_PIN);
-		}
-		else if (coreChannel == API_PWM_CORE_CCP1)
-		{
-			DL_GPIO_initPeripheralOutputFunction(G3507_PWM4_CCP1_IOMUX,
-			                                     G3507_PWM4_CCP1_FUNC);
-			DL_GPIO_enableOutput(G3507_PWM4_CCP1_PORT,
-			                     G3507_PWM4_CCP1_PIN);
-		}
-		return;
-	}
 }
 
 /* ══════════════════════════════════════════════════════════════════════

@@ -121,10 +121,16 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
         usart_irq_dispatch_by_id(id, &data, &rxValid);
         if (rxValid != 0U)
         {
-            /* 摄像头数据包解析 */
+            /* 步进电机应答 → 环形缓冲（阻塞命令从环缓取数） */
             if (id == API_USART2)
             {
-                usart_Dispose_Data(USART2, &USART_DataTypeStruct, (uint8_t)data);
+                StepMotor_RxPush((uint8_t)data);
+            }
+
+            /* 摄像头数据包解析 */
+            if (id == API_USART4)
+            {
+                usart_Dispose_Data(USART4, &USART_DataTypeStruct, (uint8_t)data);
 
                 /* 收到完整数据包后立即捕获到全局变量 */
                 if (USART_DataTypeStruct.state == 2U)
@@ -132,18 +138,6 @@ void Control_Task_USART_Callback(API_USART_Id_t id)
                     USART_CamCapture();
                 }
             }
-
-            /* 步进电机应答 → 环形缓冲（阻塞命令从环缓取数） */
-            // if (id == API_USART3)
-            // {
-            //     StepMotor_RxPush((uint8_t)data);
-            // }
-
-            /* 红外循迹模块数据包解析 */
-            // if (id == API_USART4)
-            // {
-                // IRLine_RxPush((uint8_t)data);
-            // }
         }
     } while (rxValid != 0U);
 }

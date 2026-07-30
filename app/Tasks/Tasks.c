@@ -178,72 +178,88 @@ static void Task_3(void)
     switch (s_state)
     {
         case PHASE_TO_P5:
-            Ball_Move_Control();
-
-            /* 判断是否到达 +5 */
+            if (CAM_VALID > 0.5f)
             {
-                float error = CAM_X - 5.0f;
-                if (error < 0.0f) error = -error;   /* abs(error) */
+                Ball_Move_Control();
 
-                if (error <= STABLE_THRESHOLD)
+                /* 判断是否到达 +5 */
                 {
-                    if (++s_confirm_cnt >= CONFIRM_TICKS)
+                    float error = CAM_X - 5.0f;
+                    if (error < 0.0f) error = -error;   /* abs(error) */
+
+                    if (error <= STABLE_THRESHOLD)
                     {
-                        s_confirm_cnt = 0U;
-                        s_state       = PHASE_CONFIRM_P5;
+                        if (++s_confirm_cnt >= CONFIRM_TICKS)
+                        {
+                            s_confirm_cnt = 0U;
+                            s_state       = PHASE_CONFIRM_P5;
+                        }
+                    }
+                    else
+                    {
+                        s_confirm_cnt = 0U;   /* 离开阈值则重置消抖计数 */
                     }
                 }
-                else
-                {
-                    s_confirm_cnt = 0U;   /* 离开阈值则重置消抖计数 */
-                }
             }
+            /* else: 丢球，保持当前位置，冻结 PID 和状态机 */
             break;
 
         case PHASE_CONFIRM_P5:
             /* 在 +5 稳定后短暂保持（给一次确认周期），然后切目标 */
-            Ball_Move_Control();
-
-            if (++s_confirm_cnt >= CONFIRM_TICKS)
+            if (CAM_VALID > 0.5f)
             {
-                s_confirm_cnt = 0U;
-                BallPid_SetTarget(-5.0f);    /* 切换目标：X = -5.0 */
-                s_state = PHASE_TO_N5;
+                Ball_Move_Control();
+
+                if (++s_confirm_cnt >= CONFIRM_TICKS)
+                {
+                    s_confirm_cnt = 0U;
+                    BallPid_SetTarget(-5.0f);    /* 切换目标：X = -5.0 */
+                    s_state = PHASE_TO_N5;
+                }
             }
+            /* else: 丢球，保持当前位置，冻结 PID 和状态机 */
             break;
 
         case PHASE_TO_N5:
-            Ball_Move_Control();
-
-            /* 判断是否到达 -5 */
+            if (CAM_VALID > 0.5f)
             {
-                float error = CAM_X - (-5.0f);
-                if (error < 0.0f) error = -error;
+                Ball_Move_Control();
 
-                if (error <= STABLE_THRESHOLD)
+                /* 判断是否到达 -5 */
                 {
-                    if (++s_confirm_cnt >= CONFIRM_TICKS)
+                    float error = CAM_X - (-5.0f);
+                    if (error < 0.0f) error = -error;
+
+                    if (error <= STABLE_THRESHOLD)
+                    {
+                        if (++s_confirm_cnt >= CONFIRM_TICKS)
+                        {
+                            s_confirm_cnt = 0U;
+                            s_state       = PHASE_CONFIRM_N5;
+                        }
+                    }
+                    else
                     {
                         s_confirm_cnt = 0U;
-                        s_state       = PHASE_CONFIRM_N5;
                     }
                 }
-                else
-                {
-                    s_confirm_cnt = 0U;
-                }
             }
+            /* else: 丢球，保持当前位置，冻结 PID 和状态机 */
             break;
 
         case PHASE_CONFIRM_N5:
             /* 在 -5 稳定确认后完成任务 */
-            Ball_Move_Control();
-
-            if (++s_confirm_cnt >= CONFIRM_TICKS)
+            if (CAM_VALID > 0.5f)
             {
-                s_state = PHASE_DONE;
-                Task_Stop(0);               /* 步进电机已控，DC 电机直接停 */
+                Ball_Move_Control();
+
+                if (++s_confirm_cnt >= CONFIRM_TICKS)
+                {
+                    s_state = PHASE_DONE;
+                    Task_Stop(0);               /* 步进电机已控，DC 电机直接停 */
+                }
             }
+            /* else: 丢球，保持当前位置，冻结 PID 和状态机 */
             break;
 
         case PHASE_DONE:
@@ -309,9 +325,13 @@ static void Task_4(void)
     }
 
     /* ════════════════════════════════════════════════════════════════
-     * 小球位置控制 — 全阶段持续，不受小车状态影响
+     * 小球位置控制 — 全阶段持续，不受小车状态影响。
+     * 丢球时（CAM_VALID=0）跳过控制，保持当前位置，防止追噪声。
      * ════════════════════════════════════════════════════════════════ */
-    Ball_Move_Control();
+    if (CAM_VALID > 0.5f)
+    {
+        Ball_Move_Control();
+    }
 
     /* ════════════════════════════════════════════════════════════════
      * 读取当前偏航角（ICM42688 上电归零，直走≈0°，拐弯≈-90°）
@@ -452,9 +472,13 @@ static void Task_CruiseWithBall(float ball_target)
     }
 
     /* ════════════════════════════════════════════════════════════════
-     * 小球位置控制 — 全阶段持续
+     * 小球位置控制 — 全阶段持续。
+     * 丢球时（CAM_VALID=0）跳过控制，保持当前位置，防止追噪声。
      * ════════════════════════════════════════════════════════════════ */
-    Ball_Move_Control();
+    if (CAM_VALID > 0.5f)
+    {
+        Ball_Move_Control();
+    }
 
     /* ════════════════════════════════════════════════════════════════
      * 小车状态机

@@ -42,13 +42,13 @@ void YawTest_Control(void);             /* 偏航角单独测试（纯差速，�
  * 小球位置环 — 摄像头 X 坐标 → 位置 PID → StepMotor_SetAngle
  *
  * BallPid_Init:     初始化 PID 结构体（限制、死区、采样周期）
- * BallPid_SetTarget:设置目标 X 坐标（自然单位，和 CAM_X 同量纲）
- * BallPid_Calc:     给定当前 X 坐标，计算 PID 输出（存入 ball_pid.output）
+ * BallPid_SetTarget:设置目标 X 坐标（浮点，和 CAM_X 同量纲，支持小数点精度）
+ * BallPid_Calc:     给定当前 X 坐标（浮点），内部缩放 100× 送整数 PID
  * Ball_Move_Control:完整控制周期 — 读 CAM_X → PID → StepMotor_SetAngle
  */
 void BallPid_Init(void);
-void BallPid_SetTarget(int32_t target_x);
-int32_t BallPid_Calc(int16_t ball_x);
+void BallPid_SetTarget(float target_x);
+int32_t BallPid_Calc(float ball_x);
 void Ball_Move_Control(void);
 
 /*

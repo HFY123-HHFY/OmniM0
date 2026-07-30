@@ -154,10 +154,8 @@ static void Task_3(void)
     };
 
     /* ── 阈值常量 ── */
-    enum {
-        STABLE_THRESHOLD = 1,       /* 到达判定：|error| ≤ 1（摄像头分辨率级） */
-        CONFIRM_TICKS    = 25U      /* 稳定确认：25×20ms = 500ms            */
-    };
+    #define STABLE_THRESHOLD   1.0f    /* 到达判定：|error| ≤ 1.0（摄像头分辨率级） */
+    #define CONFIRM_TICKS      25U     /* 稳定确认：25×20ms = 500ms            */
 
     /* ── 静态状态变量（由 s_gen 感知重启）── */
     static uint8_t  s_state       = PHASE_TO_P5;
@@ -174,7 +172,7 @@ static void Task_3(void)
         /* 小球位置环结构已由 PID_Control_Init 初始化，这里只需设参数 */
         /* kp=400: 误差 5 单位 → 2000 duty；ki=20: 慢速消静差；kd=15: 阻尼 */
         Set_PID(&ball_pid, 400.0f, 20.0f, 15.0f);
-        BallPid_SetTarget(5);           /* 第一阶段目标：X = +5 */
+        BallPid_SetTarget(5.0f);         /* 第一阶段目标：X = +5.0 */
     }
 
     switch (s_state)
@@ -184,10 +182,10 @@ static void Task_3(void)
 
             /* 判断是否到达 +5 */
             {
-                int16_t error = (int16_t)((int32_t)CAM_X - 5);
-                if (error < 0) error = (int16_t)(-error);   /* abs(error) */
+                float error = CAM_X - 5.0f;
+                if (error < 0.0f) error = -error;   /* abs(error) */
 
-                if (error <= (int16_t)STABLE_THRESHOLD)
+                if (error <= STABLE_THRESHOLD)
                 {
                     if (++s_confirm_cnt >= CONFIRM_TICKS)
                     {
@@ -209,7 +207,7 @@ static void Task_3(void)
             if (++s_confirm_cnt >= CONFIRM_TICKS)
             {
                 s_confirm_cnt = 0U;
-                BallPid_SetTarget(-5);      /* 切换目标：X = -5 */
+                BallPid_SetTarget(-5.0f);    /* 切换目标：X = -5.0 */
                 s_state = PHASE_TO_N5;
             }
             break;
@@ -219,10 +217,10 @@ static void Task_3(void)
 
             /* 判断是否到达 -5 */
             {
-                int16_t error = (int16_t)((int32_t)CAM_X - (-5));
-                if (error < 0) error = (int16_t)(-error);
+                float error = CAM_X - (-5.0f);
+                if (error < 0.0f) error = -error;
 
-                if (error <= (int16_t)STABLE_THRESHOLD)
+                if (error <= STABLE_THRESHOLD)
                 {
                     if (++s_confirm_cnt >= CONFIRM_TICKS)
                     {
@@ -307,7 +305,7 @@ static void Task_4(void)
 
         /* ── 小球位置环：目标 X=0（始终控制）── */
         Set_PID(&ball_pid, 400.0f, 20.0f, 15.0f);
-        BallPid_SetTarget(0);
+        BallPid_SetTarget(0.0f);
     }
 
     /* ════════════════════════════════════════════════════════════════
@@ -404,11 +402,11 @@ static void Task_4(void)
  * 摆杆方面：
  *   全过程小球位置环始终控制步进电机，将小球稳定在 ball_target 处。
  *
- * @param ball_target  小球目标 X 坐标（-12~+12）
+ * @param ball_target  小球目标 X 坐标（浮点，-12.0~+12.0）
  *
  * 调用者：
- *   Task_5 → ball_target = 0
- *   Task_6 → ball_target = g_task6_ball_target（评委现场指定）
+ *   Task_5 → ball_target = 0.0f
+ *   Task_6 → ball_target = (float)g_task6_ball_target（评委现场指定）
  *
  * 调用频率：TIMG0 ISR 20ms（由 Task_Run 分发）。
  * ══════════════════════════════════════════════════════════════════════ */
@@ -419,7 +417,7 @@ static void Task_4(void)
 #define TASK_CB_CONFIRM_CNT      0U      /* 终点消抖确认（0=立即触发）       */
 #define TASK_CB_PASS_TICKS       10U     /* 通过 A 点延时（10×20ms=200ms）   */
 
-static void Task_CruiseWithBall(int32_t ball_target)
+static void Task_CruiseWithBall(float ball_target)
 {
     /* ── 状态机 ── */
     enum {
@@ -511,13 +509,13 @@ int16_t g_task6_ball_target = 0;
 /* Task_5：循迹一圈 + 小球稳定在 X=0 */
 static void Task_5(void)
 {
-    Task_CruiseWithBall(0);
+    Task_CruiseWithBall(0.0f);
 }
 
 /* Task_6：循迹一圈 + 小球稳定在指定的 X 坐标处 */
 static void Task_6(void)
 {
-    Task_CruiseWithBall((int32_t)g_task6_ball_target);
+    Task_CruiseWithBall((float)g_task6_ball_target);
 }
 
 /*

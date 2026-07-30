@@ -39,20 +39,20 @@ typedef G3507_USART_View_t USART_TypeDef;
  * 串口数据包解析状态结构：
  * 协议格式：s<val1>,<val2>,...,<valN>e
  *
- * 摄像头协议示例：s1,240e
+ * 摄像头协议示例：s1,24.5e
  *   - 数据1 (CAM_VALID): 有效标志（1=有效，0=无效）
- *   - 数据2 (CAM_X):     摄像头 X 轴坐标（自然单位）
+ *   - 数据2 (CAM_X):     摄像头 X 轴坐标（浮点，支持小数点精度）
  *
  * - 's'：包头
  * - ','：分隔符
  * - 'e'：包尾
  *
- * data[] 改为 int16_t，解析结果直接存储有符号值，
- * 避免 uint16_t ↔ int16_t 来回强转导致负值被扭曲。
+ * data[] 类型为 float，支持小数点位（如 24.5、-3.14），
+ * 提升小球位置环 PID 控制精度。
  */
 typedef struct
 {
-	int16_t data[Data_len];
+	float data[Data_len];
 	uint8_t count;
 	uint8_t state;
 	uint8_t current_index;
@@ -66,7 +66,7 @@ extern USART_DataType USART_DataTypeStruct;
 
 /* ── 摄像头数据全局缓存（USART4 解析后使用）── */
 #define CAM_DATA_LEN  4U
-extern int16_t g_cam_data[CAM_DATA_LEN];
+extern float g_cam_data[CAM_DATA_LEN];
 extern uint8_t g_cam_count;
 
 /* 摄像头数据包字段别名（协议格式：s<有效标志>,<X坐标>e） */
@@ -125,7 +125,7 @@ void usart_Dispose_Data(USART_TypeDef *USARTx, USART_DataType *USART_DataTypeStr
  * 获取已解析数据项。
  * 返回：索引有效则返回数据，否则返回 0。
  */
-int16_t USART_Deal(USART_DataType *pData, int8_t index);
+float USART_Deal(USART_DataType *pData, int8_t index);
 
 /*
  * 帧超时检测：若解析器在 state=1 超过 timeout_ms 仍未收到 'e'，

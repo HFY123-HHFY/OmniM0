@@ -118,20 +118,26 @@ static void usart_write_data(USART_TypeDef *USARTx, uint8_t data)
 /* 全局接收解析状态。 */
 USART_DataType USART_DataTypeStruct;
 
-/* ── 摄像头数据全局缓存（串口中断 解析后供 PID 环使用）── */
-int16_t g_cam_data[CAM_DATA_LEN] = {0};
+/* ── 摄像头数据全局缓存（串口中断解析后供 PID 环使用）── */
+float g_cam_data[CAM_DATA_LEN] = {0.0f};
 uint8_t g_cam_count = 0U;
 
 /*
- * parse_buffer_to_int — 把 buffer 中 ASCII 数字字符串转为 int16_t。
- * 支持负数（首个字符为 '-'）。
+ * parse_buffer_to_float — 把 buffer 中 ASCII 字符串转为 float。
+ * 支持：可选负号、整数部分、可选小数点 + 小数部分。
+ * 示例："24.5" → 24.5f,  "-3.14" → -3.14f,  "120" → 120.0f
  * 返回：转换成功返回 true，非法字符返回 false。
  */
-static uint8_t parse_buffer_to_int(const uint8_t *buf, uint8_t len, int16_t *out)
+static uint8_t parse_buffer_to_float(const uint8_t *buf, uint8_t len, float *out)
 {
 	uint8_t i;
 	uint8_t is_negative;
-	int16_t value;
+	uint8_t in_fraction;
+	int32_t int_part;
+	int32_t frac_part;
+	uint8_t frac_digits;
+	float result;
+	float frac_div;
 
 	if ((buf == 0) || (out == 0) || (len == 0U))
 	{
@@ -140,7 +146,10 @@ static uint8_t parse_buffer_to_int(const uint8_t *buf, uint8_t len, int16_t *out
 
 	is_negative = 0U;
 	i = 0U;
-	value = 0;
+	int_part    = 0;
+	frac_part   = 0;
+	frac_digits = 0U;
+	in_fraction = 0U;
 
 	if (buf[0] == '-')
 	{
@@ -150,9 +159,21 @@ static uint8_t parse_buffer_to_int(const uint8_t *buf, uint8_t len, int16_t *out
 
 	for (; i < len; i++)
 	{
-		if ((buf[i] >= '0') && (buf[i] <= '9'))
+		if ((buf[i] == '.') && (in_fraction == 0U))
 		{
-			value = (int16_t)(value * 10 + (int16_t)(buf[i] - '0'));
+			in_fraction = 1U;
+		}
+		else if ((buf[i] >= '0') && (buf[i] <= '9'))
+		{
+			if (in_fraction != 0U)
+			{
+				frac_part = frac_part * 10 + (int32_t)(buf[i] - '0');
+				frac_digits++;
+			}
+			else
+			{
+				int_part = int_part * 10 + (int32_t)(buf[i] - '0');
+			}
 		}
 		else
 		{
@@ -160,12 +181,23 @@ static uint8_t parse_buffer_to_int(const uint8_t *buf, uint8_t len, int16_t *out
 		}
 	}
 
-	if (is_negative != 0U)
+	result = (float)int_part;
+	if (frac_digits > 0U)
 	{
-		value = (int16_t)(-value);
+		frac_div = 1.0f;
+		for (i = 0U; i < frac_digits; i++)
+		{
+			frac_div *= 10.0f;
+		}
+		result += (float)frac_part / frac_div;
 	}
 
-	*out = value;
+	if (is_negative != 0U)
+	{
+		result = -result;
+	}
+
+	*out = result;
 	return 1U;
 }
 
@@ -469,15 +501,14 @@ void usart_irq_dispatch_by_id(API_USART_Id_t id, uint32_t *rxData, uint8_t *rxVa
 }
 
 /*
- * 串口数据包解析（重构版）：
+ * 串口数据包解析（浮点版）：
  *
  * 协议格式：s<val1>,<val2>,...,<valN>e
- * 示例：   s88,-93,104e  →  data[0]=88, data[1]=-93, data[2]=104
+ * 示例：   s1,24.5e     →  data[0]=1.0f, data[1]=24.5f
+ *         s0,-3.14,88e →  data[0]=0.0f, data[1]=-3.14f, data[2]=88.0f
  *
- * 改进点：
- * - 数字解析提取到 parse_buffer_to_int，消除 ~20 行重复代码
- * - 去掉 memset，仅 reset buffer_len（解析只读到 buffer_len）
- * - data[] 类型统一为 int16_t，不再强转
+ * - 数字解析使用 parse_buffer_to_float，支持小数点精度
+ * - data[] 类型为 float，供 PID 小球位置环高精度控制
  * - 记录 start_tick 供帧超时检测使用
  */
 void usart_Dispose_Data(USART_TypeDef *USARTx, USART_DataType *p, uint8_t RxData)
@@ -503,8 +534,8 @@ void usart_Dispose_Data(USART_TypeDef *USARTx, USART_DataType *p, uint8_t RxData
 			/* 包尾：解析缓冲区中最后一个数值 */
 			if (p->buffer_len > 0U)
 			{
-				int16_t value;
-				if ((parse_buffer_to_int(p->buffer, p->buffer_len, &value) != 0U)
+				float value;
+				if ((parse_buffer_to_float(p->buffer, p->buffer_len, &value) != 0U)
 				    && (p->current_index < Data_len))
 				{
 					p->data[p->current_index] = value;
@@ -518,8 +549,8 @@ void usart_Dispose_Data(USART_TypeDef *USARTx, USART_DataType *p, uint8_t RxData
 			/* 分隔符：存储当前 buffer 中的数值 */
 			if (p->buffer_len > 0U)
 			{
-				int16_t value;
-				if ((parse_buffer_to_int(p->buffer, p->buffer_len, &value) != 0U)
+				float value;
+				if ((parse_buffer_to_float(p->buffer, p->buffer_len, &value) != 0U)
 				    && (p->current_index < Data_len))
 				{
 					p->data[p->current_index] = value;
@@ -528,15 +559,33 @@ void usart_Dispose_Data(USART_TypeDef *USARTx, USART_DataType *p, uint8_t RxData
 			}
 			p->buffer_len = 0U; /* 准备接收下一个数值 */
 		}
-		else if (((RxData >= '0') && (RxData <= '9')) || (RxData == '-'))
+		else if (((RxData >= '0') && (RxData <= '9')) || (RxData == '-') || (RxData == '.'))
 		{
-			/* 数字字符或负号 */
+			/* 数字字符、负号或小数点 */
 			if (p->buffer_len < 15U)
 			{
 				/* 负号只能出现在 buffer 开头，否则是非法帧 */
 				if ((RxData == '-') && (p->buffer_len != 0U))
 				{
 					p->state = 0U;
+				}
+				/* 小数点不能重复出现 */
+				else if (RxData == '.')
+				{
+					uint8_t has_dot = 0U;
+					uint8_t k;
+					for (k = 0U; k < p->buffer_len; k++)
+					{
+						if (p->buffer[k] == '.') { has_dot = 1U; break; }
+					}
+					if (has_dot != 0U)
+					{
+						p->state = 0U; /* 重复小数点，丢弃 */
+					}
+					else
+					{
+						p->buffer[p->buffer_len++] = RxData;
+					}
 				}
 				else
 				{
@@ -593,11 +642,11 @@ void usart_FrameTimeout_Check(USART_DataType *p, uint32_t timeout_ms)
 }
 
 /* 安全读取解析结果。 */
-int16_t USART_Deal(USART_DataType *pData, int8_t index)
+float USART_Deal(USART_DataType *pData, int8_t index)
 {
 	if ((pData == 0) || (index < 0) || ((uint8_t)index >= pData->count))
 	{
-		return 0;
+		return 0.0f;
 	}
 
 	return pData->data[(uint8_t)index];
@@ -607,10 +656,10 @@ int16_t USART_Deal(USART_DataType *pData, int8_t index)
  * USART_CamCapture — 摄像头数据包捕获
  *
  * 在 USART ISR 回调中检测到 state=2 后调用。
- * 协议格式：s<有效标志>,<X坐标>e（如 s1,240e）
+ * 协议格式：s<有效标志>,<X坐标>e（如 s1,24.5e）
  *
- * g_cam_data[0] (CAM_VALID): 数据有效性标志（1=有效，0=无效）
- * g_cam_data[1] (CAM_X):     摄像头 X 轴坐标
+ * g_cam_data[0] (CAM_VALID): 数据有效性标志（1.0=有效，0.0=无效）
+ * g_cam_data[1] (CAM_X):     摄像头 X 轴坐标（浮点，支持小数点精度）
  */
 void USART_CamCapture(void)
 {

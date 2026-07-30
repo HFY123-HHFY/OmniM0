@@ -269,47 +269,55 @@ void YawTest_Control(void)
  * 小球位置环 — 摄像头 X 坐标 → 位置 PID → 电机
  *
  * 物理背景：半圆弧轨道，X 轴坐标 -12 ~ +12。
- * 摄像头识别小球 X 位置写入 CAM_X (g_cam_data[1])，PID 输出控制电机倾斜轨道。
+ * 摄像头识别小球 X 位置写入 CAM_X (g_cam_data[1], float)，PID 输出控制电机倾斜轨道。
  *
  * BallPid_Init   — 结构体初始化（20ms 采样周期，±4000 输出上限）
  * BallPid_Calc   — 给定当前 X 坐标，返回 PID 输出（natural units）
  * Ball_Move_Control — 完整控制周期：读取 CAM_X → PID → Motor()
  * ══════════════════════════════════════════════════════════════════════ */
 
+/*
+ * 小球位置环浮点→整数缩放因子：
+ * CAM_X 为浮点（如 24.5），内部 ×100 转为整数送 Q16.16 PID，
+ * 保持 0.01 分辨率。PID 输出也放大 100 倍，BALL_MOTOR_DEG_PER_OUTPUT 相应缩小。
+ */
+#define BALL_PID_SCALE  100.0f
+
 void BallPid_Init(void)
 {
     PID_Init(&ball_pid);
-    PID_Init_WithLimit(&ball_pid, 500, API_MOTOR_MAX_DUTY);  /* I_max=500, Out_max=4000 */
-    PID_SetSampleTime(&ball_pid, 20);                         /* 20ms，和 ISR 任务周期一致 */
-    PID_SetDeadband(&ball_pid, 1);                            /* ±1 单位死区，摄像头分辨率级 */
+    PID_Init_WithLimit(&ball_pid, 500 * (int32_t)BALL_PID_SCALE, API_MOTOR_MAX_DUTY);
+    PID_SetSampleTime(&ball_pid, 20);
+    PID_SetDeadband(&ball_pid, (int32_t)(1.0f * BALL_PID_SCALE));  /* ±1.00 → ±100 */
 }
 
-/* BallPid_SetTarget — 设置小球位置环目标 X 坐标 */
-void BallPid_SetTarget(int32_t target_x)
+/* BallPid_SetTarget — 设置小球位置环目标 X 坐标（浮点） */
+void BallPid_SetTarget(float target_x)
 {
-    PID_SetTarget(&ball_pid, target_x);
+    PID_SetTarget(&ball_pid, (int32_t)(target_x * BALL_PID_SCALE));
 }
 
-/* BallPid_Calc — 计算小球位置环 PID 输出 */
-int32_t BallPid_Calc(int16_t ball_x)
+/* BallPid_Calc — 计算小球位置环 PID 输出（浮点输入，整数输出） */
+int32_t BallPid_Calc(float ball_x)
 {
-    return PID_Calc(&ball_pid, (int32_t)ball_x);
+    return PID_Calc(&ball_pid, (int32_t)(ball_x * BALL_PID_SCALE));
 }
 
 /* PID 输出 → 电机角度缩放因子：angle_deg = pid_output × GAIN */
-#define BALL_MOTOR_DEG_PER_OUTPUT  0.0225f  /* ±4000 → ±90° */
+/* 因为 PID 输入/输出放大了 100 倍，GAIN 需缩小 100 倍 */
+#define BALL_MOTOR_DEG_PER_OUTPUT  0.000225f  /* 0.0225f / 100 */
 
 /*
  * Ball_Move_Control — 小球位置环完整控制周期（TIMG0 ISR 20ms）。
  *
- * 内部：CAM_X → BallPid_Calc → ball_pid.output → StepMotor_SetAngle。
+ * 内部：CAM_X (float) → BallPid_Calc (×100→int) → PID → StepMotor_SetAngle。
  *
  * 调用链：
  *   TIMG0 ISR 20ms → Task_Run() → Task_3() → Ball_Move_Control()
  *     → BallPid_Calc(CAM_X) → StepMotor_SetAngle(angle)
  *
- * 缩放：PID 输出 ±4000 → 电机角度 ±90°（BALL_MOTOR_DEG_PER_OUTPUT）。
- * 可根据实际机械结构调缩放因子，不需要改 PID 参数。
+ * 缩放：CAM_X ×100 → int，PID 输出 ×0.000225 → 电机角度。
+ * PID 参数不变，调参体验一致。
  *
  * 注意：StepMotor_SetAngle 内部发 ~14 字节 UART（~1.2ms @115200bps），
  *       在 20ms ISR 槽中占比 ~6%，可接受。

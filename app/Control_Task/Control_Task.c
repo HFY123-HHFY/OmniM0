@@ -10,6 +10,7 @@
 #include "G3507_Encoder.h"
 #include "API_Motor.h"
 #include "ICM42688.h"
+#include "gray_adc.h"
 #include "IR_Line.h"
 #include "StepMotor.h"
 
@@ -52,8 +53,8 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     if (tick_5ms >= 5U)
     {
         tick_5ms = 0U;
-        // GrayADC_Task(&g_graySensor); /* 感为无MCU灰度 */
-        IRLine_Task(&g_irLine);         /* 幻尔八路红外循迹 */
+        GrayADC_Task(&g_graySensor); /* 感为无MCU灰度 */
+        // IRLine_Task(&g_irLine);         /* 幻尔八路红外循迹 */
 
         ICM42688_ReadSensor();            /* ICM42688 6轴 burst读 + 偏航积分 */
         Direction_Control();              /* 灰度环PID计算输出 */
@@ -70,11 +71,11 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
 		G3507_Encoder_SnapshotAll();
 		Encoder1_Speed =  -API_Encoder_GetFilteredSpeed(API_ENCODER_1);
 		Encoder2_Speed =   API_Encoder_GetFilteredSpeed(API_ENCODER_2);
-        // PID_Speed_Control(); /* 速度环 */        
+        // PID_Speed_Control(); /* 速度环 */
         // Direction_Test_Control(); /* 灰度环PID计算输出 */
-        YawTest_Control();  /* 偏航角环PID计算输出 */
+        // YawTest_Control();  /* 偏航角环PID计算输出 */
         // LineFollow_Output(); /* 速度环 + 灰度环融合输出 */
-        // Task_Run();
+        Task_Run();
 	}
 
     /* ── 4. TaskManager：任务标志位（主循环消费）── */

@@ -20,7 +20,7 @@ extern PID_EncoderSpeed_t speed_loop;
 extern PID_TypeDef direction_pid;
 
 /* 幻尔红外传感器实例（IR_Line.c 定义，供 Control_Task / main 引用） */
-extern IRLine_Sensor_t g_irLine;
+extern GrayADC_Sensor_t g_graySensor;
 
 /* 任务选择（KEY.c 定义，KEY2 循环 1→4） */
 extern volatile uint8_t s_task_select;

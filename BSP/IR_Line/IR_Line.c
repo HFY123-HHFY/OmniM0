@@ -35,7 +35,7 @@ IRLine_Sensor_t g_irLine;
  *
  * 仅清零结构体字段 + 设置默认 EMA 滤波中心位置。
  * GPIO 三根地址线（AD0/AD1/AD2）由 GrayADC_Init 已配置为推挽输出，
- * 本函数不重复操作硬件，避免覆盖 GrayADC 的初始化状态。
+ * 本函数不重复操作硬件。
  *
  * 调用时机：GrayADC_Init 之后、TIMG0 启动之前。
  *===========================================================================*/
@@ -61,19 +61,11 @@ void IRLine_Init(IRLine_Sensor_t *sensor)
  * IRLine_Task — 传感器主任务（TIMG0 ISR 5ms 槽调用）
  *
  * 完整流程：
- *   1. 遍历 8 通道
- *      a) GrayADC_SelectChannel(ch) — 切换 74HC4051 地址线
- *      b) 4 次 ADC 过采样取均值 — 抑制随机噪声
- *      c) 存入 sensor->raw_value[ch]
- *
- *   2. 固定阈值二值化
- *      raw > IRLINE_THRESHOLD → digital_bits = 1（黑线）
- *      raw ≤ IRLINE_THRESHOLD → digital_bits = 0（白线）
- *
- *   3. 构建合并字节 sensor->digital（bit0=S0 ... bit7=S7）
+ *   1. 遍历 8 通道，GrayADC_SelectChannel 选通，4 次过采样取均值
+ *   2. 固定阈值二值化：raw > IRLINE_THRESHOLD → 黑线(1)
+ *   3. 构建合并字节
  *
  * 耗时：约 40µs @80MHz（8 × 4 × ADC 采样），ISR 安全。
- * 阈值 IRLINE_THRESHOLD 在 IR_Line.h 中配置，不会覆盖模块按键校准结果。
  *===========================================================================*/
 void IRLine_Task(IRLine_Sensor_t *sensor)
 {
@@ -99,10 +91,9 @@ void IRLine_Task(IRLine_Sensor_t *sensor)
     for (i = 0U; i < 8U; i++)
     {
         /*
-         * 注意：模块原始逻辑为"越黑 → ADC 值越小（红外反射弱）"。
-         * 但幻尔模块可能做了信号调理，实际极性以实测为准。
-         * 如果二值化结果反了（黑白颠倒），修改 IRLINE_THRESHOLD
-         * 的比较方向或阈值大小即可。
+         * 模块原始逻辑：红外反射弱（黑线吸收）→ ADC 值升高。
+         * raw > threshold → 判为黑线。
+         * 如果实测极性反了，修改 IRLINE_THRESHOLD 比较方向即可。
          */
         sensor->digital_bits[i] = (sensor->raw_value[i] > IRLINE_THRESHOLD) ? 1U : 0U;
     }
@@ -122,18 +113,32 @@ void IRLine_Task(IRLine_Sensor_t *sensor)
 }
 
 /*===========================================================================
- * IRLine_PrintBits — 打印 8 路二值化 bits 到指定串口
+ * IRLine_PrintRaw — 打印 8 路原始 ADC 值（校准诊断用）
+ *
+ * 输出示例：RAW:150 180 2100 2050 1980 170 160 140
+ * 放白纸上 8 路应接近一致；放黑线上，黑线位置的几路应明显偏高。
+ * 若白纸上 8 路差异大 → 按模块校准按键重新校准。
+ *===========================================================================*/
+void IRLine_PrintRaw(const IRLine_Sensor_t *sensor, void *usart)
+{
+    if (sensor == 0) { return; }
+    usart_printf((USART_TypeDef *)usart,
+        "RAW:%d %d %d %d %d %d %d %d\r\n",
+        sensor->raw_value[0], sensor->raw_value[1],
+        sensor->raw_value[2], sensor->raw_value[3],
+        sensor->raw_value[4], sensor->raw_value[5],
+        sensor->raw_value[6], sensor->raw_value[7]);
+}
+
+/*===========================================================================
+ * IRLine_PrintBits — 打印 8 路二值化 bits
  *
  * 输出格式：D:00111100
  *   1 = 黑线（探到），0 = 白线（未探到）
- *
- * 调用示例：
- *   IRLine_PrintBits(&g_irLine, USART1);  // 输出到板载串口
  *===========================================================================*/
 void IRLine_PrintBits(const IRLine_Sensor_t *sensor, void *usart)
 {
     if (sensor == 0) { return; }
-
     usart_printf((USART_TypeDef *)usart,
         "D:%d%d%d%d%d%d%d%d\r\n",
         sensor->digital_bits[0], sensor->digital_bits[1],
@@ -143,23 +148,46 @@ void IRLine_PrintBits(const IRLine_Sensor_t *sensor, void *usart)
 }
 
 /*===========================================================================
- * IRLine_LinePosition — 计算黑线加权中心位置 + EMA 低通滤波
+ * IRLine_PrintLinePos — 打印线位置 + 偏差 + 二值化（PID 调参专用）
+ *
+ * 输出示例（12mm 间距）：POS:4200 E:-120 D:00111100
+ *   POS = 黑线加权位置 (0~8400，单位 0.01mm)
+ *   E   = 偏差 (POS - 中心 4200)，负=偏左，正=偏右
+ *   D   = 8 路二值化状态（1=黑，0=白）
+ *===========================================================================*/
+void IRLine_PrintLinePos(IRLine_Sensor_t *sensor, void *usart)
+{
+    if (sensor == 0) { return; }
+
+    int32_t pos    = IRLine_LinePosition(sensor);
+    int32_t center = (int32_t)(7U * IRLINE_SENSOR_SPACING_MM * 100U / 2U);
+    int32_t error  = pos - center;
+
+    usart_printf((USART_TypeDef *)usart,
+        "POS:%d E:%d D:%d%d%d%d%d%d%d%d\r\n",
+        pos, error,
+        sensor->digital_bits[0], sensor->digital_bits[1],
+        sensor->digital_bits[2], sensor->digital_bits[3],
+        sensor->digital_bits[4], sensor->digital_bits[5],
+        sensor->digital_bits[6], sensor->digital_bits[7]);
+}
+
+/*===========================================================================
+ * IRLine_LinePosition — 连续灰度加权中心位置 + EMA 低通滤波
  *
  * 传感器物理排列（间距 12mm，8 路从左到右）：
  *   [S0]  [S1]  [S2]  [S3]  [S4]  [S5]  [S6]  [S7]
  *     0   1200  2400  3600  4800  6000  7200  8400  ← mm × 100
  *
- * 加权公式：
- *   pos = Σ( digital_bits[i] × i × spacing × 100 ) / Σ( digital_bits[i] )
- *
- * 其中 digital_bits[i] = 1（黑线）→ 权重 = 1
- *      digital_bits[i] = 0（白线）→ 权重 = 0
+ * 权重 = raw_value[i]（连续 ADC 值），越黑 → ADC 值越高 → 权重越大。
+ * 与 GrayADC 的 dark = bits - normalized 同理，
+ * raw_value 本身就是连续量，位置计算平滑无离散跳变。
  *
  * EMA 低通滤波：
  *   filtered = filtered × (1 - 1/N) + raw × (1/N)
  *
  * 丢线保护：
- *   全白（total == 0）→ 返回上一次有效位置，车不会乱转。
+ *   全白（total < 50）→ 返回上一次有效位置，车不会乱转。
  *
  * 返回值：
  *   [0, 7×spacing×100] — 黑线加权中心位置（单位 0.01mm）
@@ -169,47 +197,50 @@ int32_t IRLine_LinePosition(IRLine_Sensor_t *sensor)
 {
     int32_t        weighted   = 0;
     int32_t        total      = 0;
+    int32_t        dark;
     int32_t        rawPos;
     const int32_t  step       = (int32_t)(IRLINE_SENSOR_SPACING_MM * 100UL);
-    const int32_t  maxPos     = 7 * step;      /* 最右位置 */
-    const int32_t  centerPos  = maxPos / 2;    /* 居中位置 */
+    const int32_t  maxPos     = 7 * step;
+    const int32_t  centerPos  = maxPos / 2;
     uint8_t        i;
 
     if ((sensor == 0) || (sensor->data_ready == 0U))
     {
-        return -1;  /* 传感器未就绪 */
+        return -1;
     }
 
-    /* 首次调用 → 初始化为居中 */
     if (sensor->pos_filtered < 0)
     {
         sensor->pos_filtered = centerPos;
     }
 
-    /* 加权累加：黑线探头参与计算 */
+    /*
+     * 连续灰度加权：dark = raw_value[i]。
+     *
+     * 全部 8 路 ADC 值参与加权，白面底噪（100~300）远小于黑线信号（2000~3000），
+     * 8 路天然平均后位置稳定。不扣基线避免只有 2-3 路参与导致离散跳变。
+     */
     for (i = 0U; i < 8U; i++)
     {
-        if (sensor->digital_bits[i] != 0U)   /* 1 = 黑线 */
-        {
-            weighted += (int32_t)i * step;
-            total    += 1;
-        }
+        dark = (int32_t)sensor->raw_value[i];
+        if (dark < 0) { dark = 0; }
+
+        weighted += dark * (int32_t)i * step;
+        total    += dark;
     }
 
     /* 全白 / 丢线 → 保持上一次有效位置 */
-    if (total == 0)
+    if (total < 50)
     {
         return sensor->pos_filtered;
     }
 
     rawPos = weighted / total;
 
-    /* 限幅到有效范围 */
     if (rawPos < 0)      { rawPos = 0; }
     if (rawPos > maxPos) { rawPos = maxPos; }
 
 #if IRLINE_POSITION_SMOOTHING > 0U
-    /* EMA 低通：filtered = filtered × (1 - 1/N) + raw × (1/N) */
     sensor->pos_filtered = sensor->pos_filtered
                  - sensor->pos_filtered / (int32_t)(IRLINE_POSITION_SMOOTHING)
                  + rawPos                / (int32_t)(IRLINE_POSITION_SMOOTHING);

@@ -43,7 +43,7 @@ void PID_Control_Init(void)
 
     /* ── 方向环结构 ── */
     PID_Init(&direction_pid);
-    PID_Init_WithLimit(&direction_pid, 500, API_MOTOR_MAX_DUTY);
+    PID_Init_WithLimit(&direction_pid, 1500, API_MOTOR_MAX_DUTY);
     PID_SetSampleTime(&direction_pid, 5);
     PID_SetDeadband(&direction_pid, 60);
     PID_SetIntegralSeparation(&direction_pid, 3000);
@@ -142,8 +142,8 @@ static int32_t g_steer = 0;
  * ========================================================================= */
 void Direction_Control(void)
 {
-    int32_t pos    = IRLine_LinePosition(&g_irLine);
-    int32_t center = (int32_t)(7U * IRLINE_SENSOR_SPACING_MM * 100U / 2U);
+    int32_t pos    = GrayADC_LinePosition(&g_graySensor);
+    int32_t center = (int32_t)(7U * GRAY_ADC_SENSOR_SPACING_MM * 100U / 2U);
 
     if (pos < 0)
     {

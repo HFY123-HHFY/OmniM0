@@ -1,5 +1,5 @@
 #include "Tasks.h"
-#include "Control/Control.h"             /* direction_pid, speed_loop, yaw_pid, g_irLine */
+#include "Control/Control.h"             /* direction_pid, speed_loop, yaw_pid, g_graySensor */
 #include "PID/PID.h"                     /* PID_Reset, Set_PID, PID_EncoderSpeed_Set */
 #include "API_Motor.h"                   /* API_Motor_SetSpeed */
 #include "KEY.h"                         /* Key, s_task_select */
@@ -59,7 +59,7 @@ static void Task_1(void)
 /* ══════════════════════════════════════════════════════════════════════
  * Task_2 — 速度环 + 灰度循迹环，顺时针循圆圈黑线跑一圈并计时
  *
- * 终点检测：g_irLine.digital_bits[2] 和 [5] 同时见黑（== 0）。
+ * 终点检测：g_graySensor.digital_bits[2] 和 [5] 同时见黑（== 0）。
  *   圆圈地图上起跑线横穿赛道，跑完一圈回到起点时触发。
  *
  * 计时器：KEY1 启动瞬间开始计时（秒），检测到终点停止。
@@ -92,9 +92,9 @@ static void Task_2(void)
         s_start_tick = g_sys_tick_ms;
 
         /* 速度环 */
-        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 17.0f); /* 速度环 */
+        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 20.0f); /* 速度环 */
         /* 灰度方向环 */
-        Set_PID(&direction_pid,  2.80f, 0.0f, 0.015f); /* 循迹环 */
+        Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
     }
 
     switch (s_state)
@@ -108,14 +108,15 @@ static void Task_2(void)
         /* 起步冷却递减，防止起跑线被误判为终点 */
         if (s_cooldown > 0U) { s_cooldown--; }
         /* 冷却期过后才检测终点：sensor[2] 和 [5] 同时见黑 */
-        else if (g_irLine.digital_bits[2] == 1U &&
-                 g_irLine.digital_bits[5] == 1U)
+        else if (g_graySensor.digital_bits[4] == 0U &&
+                 g_graySensor.digital_bits[5] == 0U &&
+                 g_graySensor.digital_bits[6] == 0U)
         {
             if (++s_confirm >= CONFIRM_CNT)
             {
                 /* 一圈完成：冻结局时 + 停车 + 复位 PID */
                 s_state = STATE_DONE;
-                Task_Stop(2000);               /* 反向刹车防惯性滑动 */
+                Task_Stop(50);               /* 反向刹车防惯性滑动 */
             }
         }
         else { s_confirm = 0U; }
@@ -302,7 +303,7 @@ static void Task_4(void)
 
         /* ── 小车：低速巡航循迹 ── */
         PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, TASK4_CRUISE_SPEED); /* 速度环 */
-        Set_PID(&direction_pid,  2.80f, 0.0f, 0.015f); /* 循迹环 */
+        Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
 
         /* ── 小球位置环：目标 X=0（始终控制）── */
         Set_PID(&ball_pid, 400.0f, 20.0f, 15.0f);
@@ -439,7 +440,7 @@ static void Task_5(void)
 
         /* ── 小车：低速巡航循迹 ── */
         PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, TASK5_CRUISE_SPEED); /* 速度环 */
-        Set_PID(&direction_pid,  2.80f, 0.0f, 0.015f); /* 循迹环 */
+        Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
 
         /* ── 小球位置环：目标 X=0（始终控制）── */
         Set_PID(&ball_pid, 400.0f, 20.0f, 15.0f);
@@ -466,8 +467,8 @@ static void Task_5(void)
             s_cooldown--;
         }
         /* 冷却期过后：sensor[2] 和 [5] 同时见黑 → 回到 A 点 */
-        else if (g_irLine.digital_bits[2] == 1U &&
-                 g_irLine.digital_bits[5] == 1U)
+        else if (g_graySensor.digital_bits[2] == 0U &&
+                 g_graySensor.digital_bits[5] == 0U)
         {
             if (++s_confirm >= TASK5_CONFIRM_CNT)
             {

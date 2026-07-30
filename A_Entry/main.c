@@ -114,8 +114,8 @@ int main(void)
 	StepMotor_ConfigMove(250.0f, 200.0f);  // 最大 250RPM，加速 200RPM/s, 设置步进电机转速
 
 	// PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 20.0f); /* 速度环 */
-	// Set_PID(&direction_pid,  2.80f, 0.0f, 0.015f); /* 循迹环 */
-	YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f); /* 偏航环 */
+	// Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
+	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f); /* 偏航环 */
 
 	Buzzer_Beep(100);
 
@@ -145,7 +145,6 @@ int main(void)
 		if (tasks.print_50ms.flag)
 		{
 			tasks.print_50ms.flag = false;
-			// IRLine_PrintBits(&g_irLine, USART1);
 			// GrayADC_PrintBits(&g_graySensor, USART1); 
 			// GrayADC_PrintRaw(&g_graySensor, USART3); /* 校准感为灰度 */ 
 		}
@@ -163,20 +162,20 @@ int main(void)
 			OLED_Printf(0, 16, OLED_6X8, "yaw: %.2f", g_icm42688.yaw); /* 偏航角 */
 			OLED_Printf(0, 48, OLED_6X8, "L%+d R%+d", Encoder1_Speed, Encoder2_Speed); /* 左右电机速度 */
 
+			OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
+			g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
+			g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
+			g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
+			g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); /* 灰度传感器数字量 */
+
 			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
 			// g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
 			// g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
 			// g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
-			// g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); /* 灰度传感器数字量 */
-
-			OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-			g_irLine.digital_bits[0], g_irLine.digital_bits[1],
-			g_irLine.digital_bits[2], g_irLine.digital_bits[3],
-			g_irLine.digital_bits[4], g_irLine.digital_bits[5],
-			g_irLine.digital_bits[6], g_irLine.digital_bits[7]); /* 红外传感器数字量 */
+			// g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); /* 红外传感器数字量 */
 
 			// OLED_Printf(32, 0, OLED_6X8, "Y%+d", yaw_pid.output);
-			// OLED_Printf(64, 0, OLED_6X8, "D%+d", direction_pid.output);
+			OLED_Printf(0, 48, OLED_6X8, "D%+d", direction_pid.output);
 			// OLED_Printf(0, 16, OLED_6X8, "R%+.1f P%+.1f", g_icm42688.roll, g_icm42688.pitch);
 			// OLED_Printf(0, 32, OLED_6X8, "Y%+.3f", g_icm42688.yaw);
 			OLED_Update();

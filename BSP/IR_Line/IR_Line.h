@@ -28,7 +28,7 @@ extern "C" {
  * 位置输出 EMA 低通滤波强度（0 = 不滤波）。
  * 值越大越稳但响应越慢，建议 2~6。
  */
-#define IRLINE_POSITION_SMOOTHING  4U
+#define IRLINE_POSITION_SMOOTHING  6U
 
 /*
  * 固定二值化阈值（12-bit ADC，量程 0~4095）。
@@ -78,37 +78,39 @@ void IRLine_Init(IRLine_Sensor_t *sensor);
  * 传感器主任务 — 在 TIMG0 ISR 5ms 槽中调用。
  *
  * 完整流程：
- *   1. 遍历 8 通道，通过 GrayADC_SelectChannel 选通
+ *   1. 遍历 8 通道，GrayADC_SelectChannel 选通
  *   2. 每通道 4 次 ADC 过采样取均值 → raw_value[0..7]
- *   3. 固定阈值二值化：raw > IRLINE_THRESHOLD → 黑线(1)，否则白线(0)
- *
- * 耗时：约 40µs（8 通道 × 4 采样），ISR 安全。
+ *   3. 固定阈值二值化 → digital_bits[0..7]
  */
 void IRLine_Task(IRLine_Sensor_t *sensor);
 
 /*
  * 打印 8 路二值化 bits（纯 0/1）。
- *
  * 输出格式：D:00111100
  *   1 = 黑线（探到），0 = 白线（未探到）
- *   例 D:00111100 → 中间 4 路（S2~S5）看到黑线，两侧看到白
- *
- * 用法：IRLine_PrintBits(&g_irLine, USART1);
  */
+void IRLine_PrintRaw(const IRLine_Sensor_t *sensor, void *usart);
 void IRLine_PrintBits(const IRLine_Sensor_t *sensor, void *usart);
 
 /*
- * 计算黑线位置 — 加权平均法 + EMA 低通滤波。
+ * 打印线位置 + 偏差 + 二值化 — PID 调参专用，一屏看全。
+ *
+ * 输出示例（12mm 间距）：POS:4200 E:-120 D:00111100
+ *   POS = 黑线加权位置 (0~8400，单位 0.01mm)
+ *   E   = 偏差 (POS - 中心 4200)，负=偏左，正=偏右
+ *   D   = 8 路二值化状态
+ */
+void IRLine_PrintLinePos(IRLine_Sensor_t *sensor, void *usart);
+
+/*
+ * 计算黑线位置 — 连续灰度加权平均法 + EMA 低通滤波。
  *
  * 传感器排列（间距 12mm，8 路从左到右）：
  *   [S0]  [S1]  [S2]  [S3]  [S4]  [S5]  [S6]  [S7]
  *     0   1200  2400  3600  4800  6000  7200  8400  ← mm × 100
  *
- * 黑线处 digital_bits[i] = 1 → 权重 = 1
- * 白线处 digital_bits[i] = 0 → 权重 = 0
- *
- * 加权公式：pos = Σ( weight[i] × i × spacing × 100 ) / Σ( weight[i] )
- * 丢线保护：全白时保持上一次有效位置，防止车乱转。
+ * 权重 = raw_value[i]（连续 ADC 值），越黑权重越大。
+ * 丢线保护：全白时保持上一次有效位置。
  *
  * 返回值：
  *   [0, 7×spacing×100] — 黑线加权中心位置（单位 0.01mm）
@@ -116,11 +118,8 @@ void IRLine_PrintBits(const IRLine_Sensor_t *sensor, void *usart);
  *
  * 典型 PID 用法：
  *   int32_t pos   = IRLine_LinePosition(&g_irLine);
- *   int32_t center = (int32_t)(7U * IRLINE_SENSOR_SPACING_MM * 100U / 2U);
- *   if (pos >= 0) {
- *       PID_SetTarget(&direction_pid, center);
- *       g_steer = -PID_Calc(&direction_pid, pos);
- *   }
+ *   int32_t error = pos - (7 * spacing * 100 / 2);
+ *   g_steer = PID_Calc(&direction_pid, pos);
  */
 int32_t IRLine_LinePosition(IRLine_Sensor_t *sensor);
 

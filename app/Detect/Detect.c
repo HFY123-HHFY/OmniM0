@@ -1,5 +1,5 @@
 #include "Detect.h"
-#include "Control/Control.h"  /* g_irLine */
+#include "Control/Control.h"  /* g_graySensor */
 
 /* ══════════════════════════════════════════════════════════════════════
  * 灰度状态转换检测 — 互斥双检测器 + LOCKOUT + 消抖
@@ -51,7 +51,7 @@ uint8_t GrayDetect_EnterLine(void)
 
     for (i = 0U; i < 8U; ++i)
     {
-        if (g_irLine.digital_bits[i] == 1U) { any_black = 1U; break; }
+        if (g_graySensor.digital_bits[i] == 0U) { any_black = 1U; break; }
     }
 
     switch (s_state)
@@ -143,7 +143,7 @@ uint8_t GrayDetect_ExitLine(void)
 
     for (i = 0U; i < 8U; ++i)
     {
-        if (g_irLine.digital_bits[i] == 1U) { any_black = 1U; break; }
+        if (g_graySensor.digital_bits[i] == 0U) { any_black = 1U; break; }
     }
 
     switch (s_state)

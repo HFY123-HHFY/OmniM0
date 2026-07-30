@@ -36,6 +36,9 @@ uint8_t Task_GetPos(void);         /* 当前位置：1-6 段中，7=完成      
 /* ── Task_2 圈时接口（供 OLED 显示）── */
 uint32_t Task_2_GetLapTime(void);   /* 返回圈时（秒），运行中=实时，完成=冻结，其他=0 */
 
+/* ── Task_6 小球目标 X 坐标（评委现场指定，范围 -12~+12，默认 0）── */
+extern int16_t g_task6_ball_target;
+
 #ifdef __cplusplus
 }
 #endif

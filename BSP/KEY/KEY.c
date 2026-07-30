@@ -6,6 +6,9 @@
 #include "Control.h"
 #include "LED.h"
 
+/* Task_6 小球目标坐标（KEY4 循环选择 -12~+12） */
+extern int16_t g_task6_ball_target;
+
 /* 已注册的按键配置表，由 Enroll 层通过 KEY_Register 提供。 */
 static const KEY_Config_t *s_keyConfigTable;
 /* 当前配置表中的按键数量。 */
@@ -214,6 +217,9 @@ void key_Get(void)
 	}
 	else if (KeyNum == 4U)
 	{
+		/* KEY4：循环选择 Task_6 小球目标坐标 -12 → +12 → -12 */
+		g_task6_ball_target++;
+		if (g_task6_ball_target > 12) { g_task6_ball_target = -12; }
 		Key = 4U;
 	}
 }

@@ -28,7 +28,7 @@ extern "C" {
  * 位置输出 EMA 低通滤波强度（0 = 不滤波）。
  * 值越大越稳但响应越慢，建议 2~6。
  */
-#define IRLINE_POSITION_SMOOTHING  6U
+#define IRLINE_POSITION_SMOOTHING  4U
 
 /*
  * 固定二值化阈值（12-bit ADC，量程 0~4095）。
@@ -57,6 +57,7 @@ typedef struct
     uint8_t  digital_bits[8];      /* 二值化结果：1=黑线, 0=白线      */
     uint8_t  digital;              /* 合并字节：bit0=S0 ... bit7=S7   */
     int32_t  pos_filtered;         /* LinePosition EMA 滤波状态        */
+    uint16_t min_adc[8];           /* 白底基线（运行最小值跟踪），扣除后白底权重→0 */
     uint8_t  data_ready;           /* 1 = 至少采集过一次有效数据       */
     uint8_t  frame_updated;        /* 1 = 本周期有新数据（Task 置位）  */
 } IRLine_Sensor_t;

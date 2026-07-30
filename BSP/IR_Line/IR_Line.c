@@ -23,7 +23,7 @@
 #define ADC_CH     API_ADC_CH0
 
 /* 每通道过采样次数（均值滤波，抑制电源噪声） */
-#define SAMPLES    4U
+#define SAMPLES    8U
 
 /*===========================================================================
  * 全局传感器实例
@@ -49,7 +49,8 @@ void IRLine_Init(IRLine_Sensor_t *sensor)
     for (i = 0U; i < 8U; i++)
     {
         sensor->raw_value[i]    = 0U;
-        sensor->digital_bits[i] = 0U;  /* 默认白线（未探到黑线） */
+        sensor->digital_bits[i] = 0U;
+        sensor->min_adc[i]      = 4095U; /* 初始化为 ADC 满量程，运行中自动收敛到白底 */
     }
     sensor->digital       = 0U;
     sensor->pos_filtered  = (int32_t)(7U * IRLINE_SENSOR_SPACING_MM * 100U / 2U);
@@ -85,6 +86,22 @@ void IRLine_Task(IRLine_Sensor_t *sensor)
             sum += (uint32_t)API_ADC_GetValue(ADC_INST, ADC_CH);
         }
         sensor->raw_value[ch] = (uint16_t)(sum / SAMPLES);
+    }
+
+    /* ── 白底基线跟踪：逐通道运行最小值 ── */
+    /*
+     * 幻尔模块：黑线吸收红外 → ADC 升高。白底 ADC 最低。
+     * 运行最小值自然收敛到白底基线。
+     * 初始值 4095，几帧内自动收敛。收敛后：
+     *   min_adc[i] ≈ 白底 ADC ≈ 100~300
+     *   黑线处 raw > min_adc，差值参与加权；白底处 raw ≈ min_adc，差值≈0，不干扰位置计算。
+     */
+    for (i = 0U; i < 8U; i++)
+    {
+        if (sensor->raw_value[i] < sensor->min_adc[i])
+        {
+            sensor->min_adc[i] = sensor->raw_value[i];
+        }
     }
 
     /* ── 第 2 步：固定阈值二值化 ── */
@@ -215,14 +232,19 @@ int32_t IRLine_LinePosition(IRLine_Sensor_t *sensor)
     }
 
     /*
-     * 连续灰度加权：dark = raw_value[i]。
+     * 连续灰度加权：dark = raw_value[i] - min_adc[i]。
      *
-     * 全部 8 路 ADC 值参与加权，白面底噪（100~300）远小于黑线信号（2000~3000），
-     * 8 路天然平均后位置稳定。不扣基线避免只有 2-3 路参与导致离散跳变。
+     * 扣除白底基线后：
+     *   - 白底通道 → raw ≈ min_adc → dark ≈ 0 → 不影响位置计算
+     *   - 黑线通道 → raw ≫ min_adc → dark > 0 → 按黑度加权
+     *
+     * 这与 GrayADC 的 dark = bits - normalized 等价：
+     *   两者都让白底权重归零，只有黑线处有有效权重。
+     *   白底 ADC 噪声不再进入加权，位置输出干净。
      */
     for (i = 0U; i < 8U; i++)
     {
-        dark = (int32_t)sensor->raw_value[i];
+        dark = (int32_t)sensor->raw_value[i] - (int32_t)sensor->min_adc[i];
         if (dark < 0) { dark = 0; }
 
         weighted += dark * (int32_t)i * step;

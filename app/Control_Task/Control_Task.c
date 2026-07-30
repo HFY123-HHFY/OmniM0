@@ -53,7 +53,6 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     if (tick_5ms >= 5U)
     {
         tick_5ms = 0U;
-        BallTest_Control(); /* 小球位置环 */
         GrayADC_Task(&g_graySensor); /* 感为无MCU灰度 */
         // IRLine_Task(&g_irLine);         /* 幻尔八路红外循迹 */
 
@@ -72,7 +71,7 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
 		G3507_Encoder_SnapshotAll();
 		Encoder1_Speed =  -API_Encoder_GetFilteredSpeed(API_ENCODER_1);
 		Encoder2_Speed =   API_Encoder_GetFilteredSpeed(API_ENCODER_2);
-        // BallTest_Control(); /* 小球位置环 */
+        BallTest_Control(); /* 小球位置环 */
         // PID_Speed_Control(); /* 速度环 */
         // Direction_Test_Control(); /* 灰度环PID计算输出 */
         // YawTest_Control();  /* 偏航角环PID计算输出 */

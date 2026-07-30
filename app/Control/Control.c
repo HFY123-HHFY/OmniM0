@@ -280,13 +280,15 @@ void YawTest_Control(void)
  * 小球位置环浮点→整数缩放因子：
  * CAM_X 为浮点（如 24.5），内部 ×100 转为整数送 Q16.16 PID，
  * 保持 0.01 分辨率。PID 输出也放大 100 倍，BALL_MOTOR_DEG_PER_OUTPUT 相应缩小。
+ * BALL_OUT_MAX 对应 ±90° 步进电机角度输出。
  */
 #define BALL_PID_SCALE  100.0f
+#define BALL_OUT_MAX    ((int32_t)(4000.0f * BALL_PID_SCALE))  /* ±4000 real → ±400000 scaled → ±90° */
 
 void BallPid_Init(void)
 {
     PID_Init(&ball_pid);
-    PID_Init_WithLimit(&ball_pid, 500 * (int32_t)BALL_PID_SCALE, API_MOTOR_MAX_DUTY);
+    PID_Init_WithLimit(&ball_pid, 500 * (int32_t)BALL_PID_SCALE, BALL_OUT_MAX);
     PID_SetSampleTime(&ball_pid, 20);
     PID_SetDeadband(&ball_pid, (int32_t)(1.0f * BALL_PID_SCALE));  /* ±1.00 → ±100 */
 }
@@ -327,5 +329,45 @@ void Ball_Move_Control(void)
     BallPid_Calc(CAM_X);           /* PID 计算，结果存入 ball_pid.output */
 
     float angle = (float)ball_pid.output * BALL_MOTOR_DEG_PER_OUTPUT;
+    Stepmotor_SetAngle(STEPMOTOR1, angle);
+}
+
+/*
+ * BallTest_Control — 小球方向环单独测试（摄像头数据源）
+ *
+ * 数据流：CAM_X → BallPid_Calc(目标=0) → Stepmotor_SetAngle。
+ * 目标固定为 X=0.0（保持小球在轨道中心），用于测试 PID 极性和参数。
+ *
+ * 丢球保护：CAM_VALID ≤ 0.5 时跳过控制，电机保持当前位置，防止追噪声。
+ * 输出限幅：BALL_ANGLE_MAX / BALL_ANGLE_MIN 限制电机角度范围。
+ *
+ * 调用频率：TIMG0 ISR 20ms 插槽
+ *
+ * 用法：
+ *   // 初始化（PID_Control_Init 已调 BallPid_Init，只需设参数）：
+ *   Set_PID(&ball_pid, kp, ki, kd);
+ *
+ *   // 在 ISR 20ms 中取消注释：
+ *   // BallTest_Control();
+ */
+void BallTest_Control(void)
+{
+    /* ── 丢球保护：数据无效时跳过，电机保持当前位置 ── */
+    if (CAM_VALID <= 0.5f)
+    {
+        return;
+    }
+
+    /* ── 目标 X=0.0：保持小球在轨道中心 ── */
+    BallPid_SetTarget(0.0f);
+
+    /* ── PID 计算 ── */
+    BallPid_Calc(CAM_X);
+
+    /* ── 输出 → 电机角度，限幅后发送 ── */
+    float angle = (float)ball_pid.output * BALL_MOTOR_DEG_PER_OUTPUT;
+    if (angle > BALL_ANGLE_MAX)  angle = BALL_ANGLE_MAX;
+    if (angle < BALL_ANGLE_MIN)  angle = BALL_ANGLE_MIN;
+
     Stepmotor_SetAngle(STEPMOTOR1, angle);
 }

@@ -97,29 +97,18 @@ int main(void)
 	 * ══════════════════════════════════════════════════════════════════ */
 	API_TIM_Init(API_TIM1, 1U);
 
-	/* ═════════════════════════════════════════════════════════════════════
-	 * 阶段 5：步进电机（Emm42 V5.0）
-	 *
-	 * 首次校准（仅一次！校准完立刻注释掉）：
-	 *   // Stepmotor_CalibrateOnce();   // 取消注释 → 烧录 → 电机空载校准
-	 *                                   // 校准后手动拨电机到机械零点
-	 *                                   // 看到蜂鸣器响 → 重新注释 → 烧录
-	 *
-	 * 正常上电：
-	 *   Stepmotor_BootInit() → 等驱动板上线 → 使能 → 自动回零
-	 * ═════════════════════════════════════════════════════════════════════ */
-
 	// Stepmotor_CalibrateOnce();          /* ★ 首次校准：仅跑一次，跑完立刻注释！ */
 
 	Stepmotor_BootInit(); /* 驱动板 5s 内未上线 — 检查接线/供电/波特率后复位 */
 	Stepmotor_ConfigMove(250.0f, 200.0f);  // 最大 250RPM，加速 200RPM/s
 
-
 	// PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 20.0f); /* 速度环 */
 	// Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
 	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f); /* 偏航环 */
+	// Set_PID(&ball_pid, 200.0f, 10.0f, 5.0f);  /* 小球位置环 */
+	Set_PID(&ball_pid, -200.0f, 0.0f, 0.0f);  /* 小球位置环 */
 
-	// Buzzer_Beep(100);
+	Buzzer_Beep(100);
 
 	while (1)
 	{
@@ -137,9 +126,9 @@ int main(void)
 			key_Get();
 
 			/* 步进电机手动测试（调试用，注释掉避免和 Task_Run 冲突） */
-			if (Key == 1) { Key = 0; Stepmotor_SetAngle(STEPMOTOR1,10.0f);  }
-			if (Key == 2) { Key = 0; Stepmotor_SetAngle(STEPMOTOR1,0.0f);    }
-			if (Key == 3) { Key = 0; Stepmotor_SetAngle(STEPMOTOR1,-10.0f); }
+			// if (Key == 1) { Key = 0; Stepmotor_SetAngle(STEPMOTOR1,10.0f);  }
+			// if (Key == 2) { Key = 0; Stepmotor_SetAngle(STEPMOTOR1,0.0f);    }
+			// if (Key == 3) { Key = 0; Stepmotor_SetAngle(STEPMOTOR1,-10.0f); }
 		}
 
 		/* ── 串口打印 50ms ── */
@@ -171,6 +160,8 @@ int main(void)
 			OLED_Printf(0, 16, OLED_6X8, "V%.0f", CAM_VALID); /* 数据有效标志 */
 			OLED_Printf(32, 16, OLED_6X8, "X:%.1f", CAM_X);  /* 摄像头 X 坐标 */
 			OLED_Printf(84, 16, OLED_6X8, "y:%.1f", g_icm42688.yaw); /* 偏航角 */
+
+			OLED_Printf(0, 32, OLED_6X8, "OUT:%.1f", (double)ball_pid.output * 0.000225); /* 小球PID输出角度 */
 
 			OLED_Printf(0, 48, OLED_6X8, "L%d R%d", Encoder1_Speed, Encoder2_Speed); /* 左右电机速度 */
 

@@ -45,11 +45,18 @@ void YawTest_Control(void);             /* 偏航角单独测试（纯差速，�
  * BallPid_SetTarget:设置目标 X 坐标（浮点，和 CAM_X 同量纲，支持小数点精度）
  * BallPid_Calc:     给定当前 X 坐标（浮点），内部缩放 100× 送整数 PID
  * Ball_Move_Control:完整控制周期 — 读 CAM_X → PID → Stepmotor_SetAngle
+ * BallTest_Control: 单独测试 — CAM_X → PID(目标=0) → Stepmotor_SetAngle，丢球跳过
  */
+
+/* 步进电机输出角度限幅 — BallTest_Control 用 */
+#define BALL_ANGLE_MAX   45.0f   /* 电机正方向最大角度（°） */
+#define BALL_ANGLE_MIN  -45.0f   /* 电机负方向最大角度（°） */
+
 void BallPid_Init(void);
 void BallPid_SetTarget(float target_x);
 int32_t BallPid_Calc(float ball_x);
 void Ball_Move_Control(void);
+void BallTest_Control(void);             /* 小球方向环单独测试（摄像头数据源）  */
 
 /*
  * 方向环控制（TIMG0 ISR 中 5ms 调用一次）。

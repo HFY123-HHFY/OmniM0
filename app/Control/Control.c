@@ -269,11 +269,11 @@ void YawTest_Control(void)
  * 小球位置环 — 摄像头 X 坐标 → 位置 PID → 电机
  *
  * 物理背景：半圆弧轨道，X 轴坐标 -12 ~ +12。
- * 摄像头识别小球 X 位置写入 g_cam_data[0]，PID 输出控制电机倾斜轨道。
+ * 摄像头识别小球 X 位置写入 CAM_X (g_cam_data[1])，PID 输出控制电机倾斜轨道。
  *
  * BallPid_Init   — 结构体初始化（20ms 采样周期，±4000 输出上限）
  * BallPid_Calc   — 给定当前 X 坐标，返回 PID 输出（natural units）
- * Ball_Move_Control — 完整控制周期：读取 g_cam_data[0] → PID → Motor()
+ * Ball_Move_Control — 完整控制周期：读取 CAM_X → PID → Motor()
  * ══════════════════════════════════════════════════════════════════════ */
 
 void BallPid_Init(void)
@@ -302,11 +302,11 @@ int32_t BallPid_Calc(int16_t ball_x)
 /*
  * Ball_Move_Control — 小球位置环完整控制周期（TIMG0 ISR 20ms）。
  *
- * 内部：g_cam_data[0] → BallPid_Calc → ball_pid.output → StepMotor_SetAngle。
+ * 内部：CAM_X → BallPid_Calc → ball_pid.output → StepMotor_SetAngle。
  *
  * 调用链：
  *   TIMG0 ISR 20ms → Task_Run() → Task_3() → Ball_Move_Control()
- *     → BallPid_Calc(g_cam_data[0]) → StepMotor_SetAngle(angle)
+ *     → BallPid_Calc(CAM_X) → StepMotor_SetAngle(angle)
  *
  * 缩放：PID 输出 ±4000 → 电机角度 ±90°（BALL_MOTOR_DEG_PER_OUTPUT）。
  * 可根据实际机械结构调缩放因子，不需要改 PID 参数。
@@ -316,7 +316,7 @@ int32_t BallPid_Calc(int16_t ball_x)
  */
 void Ball_Move_Control(void)
 {
-    BallPid_Calc(g_cam_data[0]);   /* PID 计算，结果存入 ball_pid.output */
+    BallPid_Calc(CAM_X);           /* PID 计算，结果存入 ball_pid.output */
 
     float angle = (float)ball_pid.output * BALL_MOTOR_DEG_PER_OUTPUT;
     StepMotor_SetAngle(angle);

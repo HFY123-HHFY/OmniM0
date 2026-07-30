@@ -6,9 +6,9 @@
 #include "Control_Task/Control_Task.h"   /* NonBlockDelay_t */
 #include "StepMotor.h"                   /* StepMotor_Stop */
 #include "ICM42688.h"                    /* ICM42688_GetSnapshot */
+#include "My_Usart/My_Usart.h"           /* CAM_VALID / CAM_X 宏 */
 
 extern volatile uint32_t g_sys_tick_ms;  /* 系统毫秒 tick，用于计时 */
-extern int16_t g_cam_data[];             /* 摄像头数据，g_cam_data[0]=小球X坐标 */
 
 /* ══════════════════════════════════════════════════════════════════════
  * 任务链调度框架
@@ -130,7 +130,7 @@ static void Task_2(void)
 /* ══════════════════════════════════════════════════════════════════════
  * Task_3 — 小球位置控制：0 → +5 → -5
  *
- * 摄像头识别小球 X 轴位置（g_cam_data[0]），位置 PID 控制轨道倾斜电机，
+ * 摄像头识别小球 X 轴位置（CAM_X = g_cam_data[1]），位置 PID 控制轨道倾斜电机，
  * 使小球沿半圆弧轨道移动到指定坐标并稳定。
  *
  * 阶段：
@@ -184,7 +184,7 @@ static void Task_3(void)
 
             /* 判断是否到达 +5 */
             {
-                int16_t error = (int16_t)((int32_t)g_cam_data[0] - 5);
+                int16_t error = (int16_t)((int32_t)CAM_X - 5);
                 if (error < 0) error = (int16_t)(-error);   /* abs(error) */
 
                 if (error <= (int16_t)STABLE_THRESHOLD)
@@ -219,7 +219,7 @@ static void Task_3(void)
 
             /* 判断是否到达 -5 */
             {
-                int16_t error = (int16_t)((int32_t)g_cam_data[0] - (-5));
+                int16_t error = (int16_t)((int32_t)CAM_X - (-5));
                 if (error < 0) error = (int16_t)(-error);
 
                 if (error <= (int16_t)STABLE_THRESHOLD)

@@ -108,7 +108,11 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
 /*
  * Control_Task_USART_Callback — USART 中断回调
  *
- * 只做环形缓冲入队（< 1µs），数据包解析由主循环 JY61P_Task() 完成。
+ * USART2 (JY61P/步进电机): 环形缓冲入队（StepMotor_RxPush），
+ *   命令响应由阻塞函数消费。
+ * USART4 (摄像头):     数据包直接在 ISR 内解析（纯整数状态机 <1µs/字节），
+ *   完整帧立即捕获到 g_cam_data[] 全局数组，数据年龄最小。
+ *
  * MSPM0 UART FIFO=4 字节，一次 ISR 可能读出多字节，必须循环排空。
  */
 void Control_Task_USART_Callback(API_USART_Id_t id)

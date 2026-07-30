@@ -37,7 +37,12 @@ typedef G3507_USART_View_t USART_TypeDef;
 
 /*
  * 串口数据包解析状态结构：
- * 协议示例：s12,-34,56e
+ * 协议格式：s<val1>,<val2>,...,<valN>e
+ *
+ * 摄像头协议示例：s1,240e
+ *   - 数据1 (CAM_VALID): 有效标志（1=有效，0=无效）
+ *   - 数据2 (CAM_X):     摄像头 X 轴坐标（自然单位）
+ *
  * - 's'：包头
  * - ','：分隔符
  * - 'e'：包尾
@@ -59,10 +64,14 @@ typedef struct
 /* 全局解析状态实例，建议在中断中喂数据，在主循环中读取结果。 */
 extern USART_DataType USART_DataTypeStruct;
 
-/* ── 摄像头数据全局缓存（USART2 解析后使用）── */
+/* ── 摄像头数据全局缓存（USART4 解析后使用）── */
 #define CAM_DATA_LEN  4U
 extern int16_t g_cam_data[CAM_DATA_LEN];
 extern uint8_t g_cam_count;
+
+/* 摄像头数据包字段别名（协议格式：s<有效标志>,<X坐标>e） */
+#define CAM_VALID    g_cam_data[0]   /* 数据有效性标志（1=有效，0=无效） */
+#define CAM_X        g_cam_data[1]   /* 摄像头识别到的 X 轴坐标         */
 
 /*
  * 发送单字节（优先异步，不行则退化阻塞发送）。

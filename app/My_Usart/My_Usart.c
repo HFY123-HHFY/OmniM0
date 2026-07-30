@@ -118,7 +118,7 @@ static void usart_write_data(USART_TypeDef *USARTx, uint8_t data)
 /* 全局接收解析状态。 */
 USART_DataType USART_DataTypeStruct;
 
-/* ── 摄像头数据全局缓存（USART2 解析后供 PID 环使用）── */
+/* ── 摄像头数据全局缓存（串口中断 解析后供 PID 环使用）── */
 int16_t g_cam_data[CAM_DATA_LEN] = {0};
 uint8_t g_cam_count = 0U;
 
@@ -607,7 +607,10 @@ int16_t USART_Deal(USART_DataType *pData, int8_t index)
  * USART_CamCapture — 摄像头数据包捕获
  *
  * 在 USART ISR 回调中检测到 state=2 后调用。
- * 把解析出的数据复制到 g_cam_data[] 全局数组，供 PID 环和 OLED 显示使用。
+ * 协议格式：s<有效标志>,<X坐标>e（如 s1,240e）
+ *
+ * g_cam_data[0] (CAM_VALID): 数据有效性标志（1=有效，0=无效）
+ * g_cam_data[1] (CAM_X):     摄像头 X 轴坐标
  */
 void USART_CamCapture(void)
 {

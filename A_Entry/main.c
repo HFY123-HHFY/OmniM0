@@ -150,25 +150,27 @@ int main(void)
 		}
 #endif
 
-		/* ── OLED 刷新 100ms ── */
+/* ── OLED 刷新 100ms ── */
 #if (DEBUG_OLED_ENABLE == 1U)
 		if (tasks.oled_100ms.flag)
 		{
 			tasks.oled_100ms.flag = false;
 			OLED_Clear();
 			OLED_Printf(0,  0, OLED_6X8, "T%d", s_task_select); /* 当前任务 */
-			OLED_Printf(32, 0, OLED_6X8, "%lus", Task_2_GetLapTime()); /* Task_2 圈时 */
-			OLED_Printf(64, 0, OLED_6X8, "B:%d", g_task6_ball_target); /* 设置小球目标坐标 */
+			OLED_Printf(24, 0, OLED_6X8, "%lus", Task_2_GetLapTime()); /* Task_2 圈时 */
+			OLED_Printf(48, 0, OLED_6X8, "B:%d", g_task6_ball_target); /* 设置小球目标坐标 */
+			OLED_Printf(74, 0, OLED_6X8, "V%d", CAM_VALID); /* 数据有效标志 */
+			OLED_Printf(98, 0, OLED_6X8, "X:%d", CAM_X);  /* 摄像头 X 坐标 */
 
-			OLED_Printf(102, 0, OLED_6X8, "%d", g_cam_data[0]); /* 摄像头 X 坐标 */
-			OLED_Printf(0, 16, OLED_6X8, "yaw: %.2f", g_icm42688.yaw); /* 偏航角 */
-			OLED_Printf(0, 48, OLED_6X8, "L%+d R%+d", Encoder1_Speed, Encoder2_Speed); /* 左右电机速度 */
+			OLED_Printf(0, 16, OLED_6X8, "y:%.1f", g_icm42688.yaw); /* 偏航角 */
 
-			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
-			// g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
-			// g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
-			// g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
-			// g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); /* 灰度传感器数字量 */
+			OLED_Printf(64, 16, OLED_6X8, "%d%d%d%d%d%d%d%d",
+			g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],
+			g_graySensor.digital_bits[2], g_graySensor.digital_bits[3],
+			g_graySensor.digital_bits[4], g_graySensor.digital_bits[5],
+			g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); /* 灰度传感器数字量 */
+
+			OLED_Printf(0, 48, OLED_6X8, "L%d R%d", Encoder1_Speed, Encoder2_Speed); /* 左右电机速度 */
 
 			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",
 			// g_graySensor.digital_bits[0], g_graySensor.digital_bits[1],

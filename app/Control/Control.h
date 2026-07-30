@@ -48,9 +48,9 @@ void YawTest_Control(void);             /* 偏航角单独测试（纯差速，�
  * BallTest_Control: 单独测试 — CAM_X → PID(目标=0) → Stepmotor_SetAngle，丢球跳过
  */
 
-/* 步进电机输出角度限幅 — BallTest_Control 用 */
-#define BALL_ANGLE_MAX   45.0f   /* 电机正方向最大角度（°） */
-#define BALL_ANGLE_MIN  -45.0f   /* 电机负方向最大角度（°） */
+/* 步进电机输出角度限幅 */
+#define BALL_ANGLE_MAX     20.0f    /* 电机正方向最大角度（°） */
+#define BALL_ANGLE_MIN    -20.0f    /* 电机负方向最大角度（°） */
 
 void BallPid_Init(void);
 void BallPid_SetTarget(float target_x);

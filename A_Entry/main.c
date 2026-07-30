@@ -100,13 +100,13 @@ int main(void)
 	// Stepmotor_CalibrateOnce();          /* ★ 首次校准：仅跑一次，跑完立刻注释！ */
 
 	Stepmotor_BootInit(); /* 驱动板 5s 内未上线 — 检查接线/供电/波特率后复位 */
-	Stepmotor_ConfigMove(250.0f, 200.0f);  // 最大 250RPM，加速 200RPM/s
+	Stepmotor_ConfigMove(120.0f, 30.0f);   // 120RPM，30档加速（匹配小球惯性，防过冲）
 
 	// PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 20.0f); /* 速度环 */
 	// Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
 	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f); /* 偏航环 */
-	// Set_PID(&ball_pid, 200.0f, 10.0f, 5.0f);  /* 小球位置环 */
-	Set_PID(&ball_pid, -200.0f, 0.0f, 0.0f);  /* 小球位置环 */
+	// Set_PID(&ball_pid, 150.0f, 10.0f, 10.0f);  /* 小球位置环：中kp, 轻ki消静差, 轻kd */
+	Set_PID(&ball_pid, -20.0f, -10.0f, -10.0f);  /* 小球位置环：1单位≈1.6°, 满偏12单位≈18° */
 
 	Buzzer_Beep(100);
 
@@ -158,10 +158,13 @@ int main(void)
 			g_graySensor.digital_bits[6], g_graySensor.digital_bits[7]); /* 灰度传感器数字量 */
 
 			OLED_Printf(0, 16, OLED_6X8, "V%.0f", CAM_VALID); /* 数据有效标志 */
-			OLED_Printf(32, 16, OLED_6X8, "X:%.1f", CAM_X);  /* 摄像头 X 坐标 */
+			OLED_Printf(32, 16, OLED_6X8, "X:%+.1f", (double)CAM_X);  /* 摄像头X坐标 */
 			OLED_Printf(84, 16, OLED_6X8, "y:%.1f", g_icm42688.yaw); /* 偏航角 */
 
-			OLED_Printf(0, 32, OLED_6X8, "OUT:%.1f", (double)ball_pid.output * 0.000225); /* 小球PID输出角度 */
+			OLED_Printf(0, 32, OLED_6X8, "OUT:%.1f",
+			            (double)ball_pid.output * 0.000225); /* 小球PID输出角度 */
+			OLED_Printf(64, 32, OLED_6X8, "%s",
+			            (((double)CAM_X > -1.0 && (double)CAM_X < 1.0) && (CAM_VALID > 0.5f)) ? "DB" : "  "); /* 死区标志 */
 
 			OLED_Printf(0, 48, OLED_6X8, "L%d R%d", Encoder1_Speed, Encoder2_Speed); /* 左右电机速度 */
 

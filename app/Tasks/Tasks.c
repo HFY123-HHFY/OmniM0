@@ -390,9 +390,119 @@ static void Task_4(void)
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+ * Task_5 — 双系统协同：灰度循迹一圈 + 通过 A 点 + 小球位置控制
+ *
+ * 小车方面：
+ *   A 点出发，灰度循迹 + 速度环控制，顺时针循黑线跑一圈。
+ *   起步冷却期内不检测终点（防起跑线误触发）。
+ *   冷却期过后，灰度传感器 [2] 和 [5] 同时见黑 → 认为回到 A 点。
+ *   通过消抖确认后，继续行驶 TASK5_PASS_TICKS 帧确保车尾通过 A，
+ *   之后停车 + 复位循迹 PID。
+ *
+ * 摆杆方面：
+ *   全过程小球位置环始终控制步进电机，将小球稳定在 X=0。
+ *
+ * 调用频率：TIMG0 ISR 20ms（由 Task_Run 分发）。
+ * ══════════════════════════════════════════════════════════════════════ */
+
+/* ── 可调参数 ── */
+#define TASK5_START_COOLDOWN      150U    /* 起步冷却（150×20ms=3s）              */
+#define TASK5_CRUISE_SPEED        10      /* 巡航速度（编码器单位，同 Task_4）     */
+#define TASK5_CONFIRM_CNT         0U      /* 终点消抖确认（5×20ms=100ms）          */
+#define TASK5_PASS_TICKS          50U     /* 通过 A 点延时（50×20ms=1s）           */
+
 static void Task_5(void)
 {
+    /* ── 状态机 ── */
+    enum {
+        STATE_CRUISE = 0U,     /* 循迹巡航 + 起步冷却 + 检测终点         */
+        STATE_PASS,            /* 检测到终点 → 直行延时，确保通过 A 点   */
+        STATE_DONE             /* 通过 A 点，停车，小球继续控制          */
+    };
 
+    /* ── 静态变量（s_gen 感知 KEY1 重新启动）── */
+    static uint8_t  s_state       = STATE_CRUISE;
+    static uint8_t  s_last_gen    = 0U;
+    static uint8_t  s_cooldown    = 0U;
+    static uint8_t  s_confirm     = 0U;
+    static uint8_t  s_pass_tick   = 0U;
+
+    /* ── 首次启动 / KEY1 重新启动 ── */
+    if (s_last_gen != s_gen)
+    {
+        s_last_gen   = s_gen;
+        s_state      = STATE_CRUISE;
+        s_cooldown   = (uint8_t)TASK5_START_COOLDOWN;
+        s_confirm    = 0U;
+        s_pass_tick  = 0U;
+
+        /* ── 小车：低速巡航循迹 ── */
+        PID_EncoderSpeed_Set(&speed_loop, 20.0f, 170.0f, 0.0f, TASK5_CRUISE_SPEED);
+        Set_PID(&direction_pid, 0.5f, 0.0f, 0.1f);
+
+        /* ── 小球位置环：目标 X=0（始终控制）── */
+        Set_PID(&ball_pid, 400.0f, 20.0f, 15.0f);
+        BallPid_SetTarget(0);
+    }
+
+    /* ════════════════════════════════════════════════════════════════
+     * 小球位置控制 — 全阶段持续
+     * ════════════════════════════════════════════════════════════════ */
+    Ball_Move_Control();
+
+    /* ════════════════════════════════════════════════════════════════
+     * 小车状态机
+     * ════════════════════════════════════════════════════════════════ */
+    switch (s_state)
+    {
+    case STATE_CRUISE:
+        /* 灰度循迹 + 速度环 */
+        LineFollow_Output();
+
+        /* 起步冷却递减（防起跑线误触发） */
+        if (s_cooldown > 0U)
+        {
+            s_cooldown--;
+        }
+        /* 冷却期过后：sensor[2] 和 [5] 同时见黑 → 回到 A 点 */
+        else if (g_graySensor.digital_bits[2] == 0U &&
+                 g_graySensor.digital_bits[5] == 0U)
+        {
+            if (++s_confirm >= TASK5_CONFIRM_CNT)
+            {
+                s_state     = STATE_PASS;
+                s_pass_tick = 0U;
+            }
+        }
+        else
+        {
+            s_confirm = 0U;   /* 离开终点线则重置消抖 */
+        }
+        break;
+
+    case STATE_PASS:
+        /*
+         * 继续循迹直行 TASK5_PASS_TICKS 帧，确保车尾完全通过 A 点。
+         */
+        LineFollow_Output();
+        s_pass_tick++;
+
+        if (s_pass_tick >= TASK5_PASS_TICKS)
+        {
+            /* 通过完成 → 停车 + 复位循迹 PID（小球 PID 不动） */
+            API_Motor_SetSpeed(0, 0);
+            PID_Reset(&direction_pid);
+            PID_Reset(&speed_loop.left);
+            PID_Reset(&speed_loop.right);
+            s_state = STATE_DONE;
+        }
+        break;
+
+    case STATE_DONE:
+        /* 小车已停，小球位置环继续在 Ball_Move_Control() 中运行 */
+        break;
+    }
 }
 
 static void Task_6(void)

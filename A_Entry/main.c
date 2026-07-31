@@ -106,8 +106,9 @@ int main(void)
 	// Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
 	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f); /* 偏航环 */
 	// Set_PID(&ball_pid, 150.0f, 10.0f, 10.0f);  /* 小球位置环：中kp, 轻ki消静差, 轻kd */
-	Set_PID(&ball_pid, -23.0f, -23.0f, -35.0f);  /* 小球位置环 */
-	BallPid_SetTarget(0.0f);                      /* 目标 X */
+	// Set_PID(&ball_pid_pos, -23.0f, -23.0f, -35.0f);  /* 正目标侧：短力臂 */
+	// Set_PID(&ball_pid_neg, -30.0f, -22.0f, -45.0f);  /* 负目标侧：长力臂，大kp+kd */
+	// BallPid_SetTarget(5.0f);                      /* 目标 X（同时设 pos/neg） */
 
 	Buzzer_Beep(100);
 
@@ -162,8 +163,10 @@ int main(void)
 			OLED_Printf(32, 16, OLED_6X8, "X:%+.1f", (double)CAM_X);  /* 摄像头X坐标 */
 			OLED_Printf(84, 16, OLED_6X8, "y:%.1f", g_icm42688.yaw); /* 偏航角 */
 
-			OLED_Printf(0, 32, OLED_6X8, "OUT:%.1f",
-			            (double)ball_pid.output * 0.000225); /* 小球PID输出角度 */
+			OLED_Printf(0, 32, OLED_6X8, "%c%.1f",
+			            (ball_pid_pos.Target >= 0) ? 'P' : 'N',
+			            (double)((ball_pid_pos.Target >= 0)
+			                ? ball_pid_pos.output : ball_pid_neg.output) * 0.000225); /* 活跃PID输出 */
 			OLED_Printf(64, 32, OLED_6X8, "%s",
 			            (((double)CAM_X > -1.0 && (double)CAM_X < 1.0) && (CAM_VALID > 0.5f)) ? "DB" : "  "); /* 死区标志 */
 

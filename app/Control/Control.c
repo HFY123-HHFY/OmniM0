@@ -23,8 +23,9 @@ PID_TypeDef direction_pid;
 /* 偏航角位置环 PID */
 PID_TypeDef yaw_pid;
 
-/* 小球位置环 PID（摄像头 X 坐标 → 电机控制） */
-PID_TypeDef ball_pid;
+/* 小球位置环 — 双向独立 PID（正/负目标各有独立参数，适应非对称机械特性） */
+PID_TypeDef ball_pid_pos;       /* 正目标（X>0，短力臂侧：小球靠近电机枢轴）    */
+PID_TypeDef ball_pid_neg;       /* 负目标（X<0，长力臂侧：小球远离电机枢轴）    */
 
 /* 幻尔红外传感器实例 — IR_Line.c 定义，此处 extern 引用（Control.h） */
 
@@ -285,53 +286,65 @@ void YawTest_Control(void)
 #define BALL_PID_SCALE  100.0f
 #define BALL_OUT_MAX    ((int32_t)(4000.0f * BALL_PID_SCALE))  /* ±4000 real → ±400000 scaled → ±90° */
 
+static void ball_pid_init_one(PID_TypeDef *p)
+{
+    PID_Init(p);
+    PID_Init_WithLimit(p, 500 * (int32_t)BALL_PID_SCALE, BALL_OUT_MAX);
+    PID_SetSampleTime(p, 20);
+    PID_SetDeadband(p, (int32_t)(1.0f * BALL_PID_SCALE));  /* ±1.00 → ±100 */
+}
+
 void BallPid_Init(void)
 {
-    PID_Init(&ball_pid);
-    PID_Init_WithLimit(&ball_pid, 500 * (int32_t)BALL_PID_SCALE, BALL_OUT_MAX);
-    PID_SetSampleTime(&ball_pid, 20);
-    PID_SetDeadband(&ball_pid, (int32_t)(1.0f * BALL_PID_SCALE));  /* ±1.00 → ±100 */
+    ball_pid_init_one(&ball_pid_pos);
+    ball_pid_init_one(&ball_pid_neg);
 }
 
-/* BallPid_SetTarget — 设置小球位置环目标 X 坐标（浮点） */
+/*
+ * BallPid_SetTarget — 同时设置两个 PID 的目标。
+ * Ball_Move_Control 内部自动按目标正负选择活跃实例。
+ */
 void BallPid_SetTarget(float target_x)
 {
-    PID_SetTarget(&ball_pid, (int32_t)(target_x * BALL_PID_SCALE));
+    int32_t t = (int32_t)(target_x * BALL_PID_SCALE);
+    PID_SetTarget(&ball_pid_pos, t);
+    PID_SetTarget(&ball_pid_neg, t);
 }
 
-/* BallPid_Calc — 计算小球位置环 PID 输出（浮点输入，整数输出） */
+/* BallPid_Calc — 兼容旧接口，直接用 ball_pid_pos */
 int32_t BallPid_Calc(float ball_x)
 {
-    return PID_Calc(&ball_pid, (int32_t)(ball_x * BALL_PID_SCALE));
+    return PID_Calc(&ball_pid_pos, (int32_t)(ball_x * BALL_PID_SCALE));
 }
 
 /* PID 输出 → 电机角度缩放因子：angle_deg = pid_output × GAIN */
-/* 因为 PID 输入/输出放大了 100 倍，GAIN 需缩小 100 倍 */
 #define BALL_MOTOR_DEG_PER_OUTPUT  0.000225f  /* 0.0225f / 100 */
+
+/*
+ * ball_pid_active — 按目标符号自动选择活跃 PID 实例。
+ * Target>0 → pos, Target<0 → neg, Target==0 → neg（无所谓）。
+ */
+static PID_TypeDef* ball_pid_active(void)
+{
+    return (ball_pid_pos.Target >= 0) ? &ball_pid_pos : &ball_pid_neg;
+}
 
 /*
  * Ball_Move_Control — 小球位置环完整控制周期（TIMG0 ISR 20ms）。
  *
- * 内部：CAM_X (float) → BallPid_Calc (×100→int) → PID → Stepmotor_SetAngle。
+ * 自动选择 ball_pid_pos / ball_pid_neg → PID_Calc → Stepmotor_SetAngle。
+ * 两个 PID 各自独立积累 I 项，互不污染。
  *
  * 调用链：
  *   TIMG0 ISR 20ms → Task_Run() → Task_3() → Ball_Move_Control()
- *     → BallPid_Calc(CAM_X) → Stepmotor_SetAngle(angle)
- *
- * 缩放：CAM_X ×100 → int，PID 输出 ×0.000225 → 电机角度。
- * PID 参数不变，调参体验一致。
- *
- * 注意：Stepmotor_SetAngle 内部发 ~14 字节 UART（~1.2ms @115200bps），
- *       在 20ms ISR 槽中占比 ~6%，可接受。
  */
 void Ball_Move_Control(void)
 {
-    BallPid_Calc(CAM_X);           /* PID 计算，结果存入 ball_pid.output */
+    PID_TypeDef *p = ball_pid_active();
 
-    float angle = (float)ball_pid.output * BALL_MOTOR_DEG_PER_OUTPUT;
+    PID_Calc(p, (int32_t)(CAM_X * BALL_PID_SCALE));
 
-    /* 非对称机械补偿：负目标方向需要额外推力 */
-    if (ball_pid.Target < 0) { angle *= BALL_ASYM_GAIN; }
+    float angle = (float)p->output * BALL_MOTOR_DEG_PER_OUTPUT;
 
     Stepmotor_SetAngle(STEPMOTOR1, angle);
 }
@@ -339,12 +352,8 @@ void Ball_Move_Control(void)
 /*
  * BallTest_Control — 小球方向环单独测试（摄像头数据源）
  *
- * 数据流：CAM_X → PID_Calc → Stepmotor_SetAngle。
- * 目标由外部 BallPid_SetTarget() 设置（默认 0.0 = 轨道中心），
- * 和 YawTest_Control / Direction_Test_Control 一致：ISR 只做计算，不设目标。
- *
- * 丢球保护：CAM_VALID ≤ 0.5 时跳过控制，电机保持当前位置，防止追噪声。
- * 输出限幅：BALL_ANGLE_MAX / BALL_ANGLE_MIN 限制电机角度范围。
+ * 目标由外部 BallPid_SetTarget() 预设（默认 0.0 = 轨道中心）。
+ * 双向独立 PID + 丢球保护 + 输出限幅。
  *
  * 调用频率：TIMG0 ISR 20ms
  */
@@ -359,16 +368,14 @@ void BallTest_Control(void)
         return;
     }
 
-    /* ── PID 计算（目标由 BallPid_SetTarget 预设，这里只读 CAM_X）── */
-    out_scaled = PID_Calc(&ball_pid, (int32_t)(CAM_X * BALL_PID_SCALE));
+    /* ── 按目标符号选择活跃 PID ── */
+    PID_TypeDef *p = ball_pid_active();
 
-    /* ── 输出 → 电机角度 ── */
+    /* ── PID 计算 ── */
+    out_scaled = PID_Calc(p, (int32_t)(CAM_X * BALL_PID_SCALE));
+
+    /* ── 输出 → 电机角度，限幅后发送 ── */
     angle = (float)out_scaled * BALL_MOTOR_DEG_PER_OUTPUT;
-
-    /* 非对称机械补偿：负目标方向需要额外推力 */
-    if (ball_pid.Target < 0) { angle *= BALL_ASYM_GAIN; }
-
-    /* ── 限幅后发送 ── */
     if (angle > BALL_ANGLE_MAX)  angle = BALL_ANGLE_MAX;
     if (angle < BALL_ANGLE_MIN)  angle = BALL_ANGLE_MIN;
 

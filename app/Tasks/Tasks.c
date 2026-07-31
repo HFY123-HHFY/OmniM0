@@ -168,8 +168,10 @@ static void Task_3(void)
         s_state       = PHASE_TO_P5;
         s_confirm_cnt = 0U;
 
-        PID_Reset(&ball_pid);                                 /* 清 I 项 */
-        Set_PID(&ball_pid, -15.0f, -25.0f, -35.0f);
+        PID_Reset(&ball_pid_pos);
+        PID_Reset(&ball_pid_neg);
+        Set_PID(&ball_pid_pos, -23.0f, -23.0f, -35.0f);  /* 正目标侧：短力臂 */
+        Set_PID(&ball_pid_neg, -30.0f, -22.0f, -45.0f);  /* 负目标侧：长力臂，大kp+kd */
         BallPid_SetTarget(5.0f);         /* 第一阶段：X = +5.0 */
     }
 
@@ -203,7 +205,7 @@ static void Task_3(void)
                 if (++s_confirm_cnt >= CONFIRM_TICKS)
                 {
                     s_confirm_cnt = 0U;
-                    PID_Reset(&ball_pid);          /* 切方向：清 I 项防震荡 */
+                    PID_Reset(&ball_pid_neg);      /* 切负目标：清 neg I 项 */
                     BallPid_SetTarget(-5.0f);   /* 切换目标：X = -5.0 */
                     s_state = PHASE_TO_N5;
                 }
@@ -305,7 +307,7 @@ static void Task_4(void)
         Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
 
         /* ── 小球位置环：目标 X=0（始终控制）── */
-        Set_PID(&ball_pid, -20.0f, -23.0f, -35.0f);
+        Set_PID(&ball_pid_pos, -23.0f, -23.0f, -35.0f); Set_PID(&ball_pid_neg, -30.0f, -22.0f, -45.0f);
         BallPid_SetTarget(0.0f);
     }
 
@@ -452,7 +454,7 @@ static void Task_CruiseWithBall(float ball_target)
         Set_PID(&direction_pid, 0.50f, 0.15f, 0.010f);
 
         /* ── 小球位置环：目标由参数指定 ── */
-        Set_PID(&ball_pid, -20.0f, -23.0f, -35.0f);
+        Set_PID(&ball_pid_pos, -23.0f, -23.0f, -35.0f); Set_PID(&ball_pid_neg, -30.0f, -22.0f, -45.0f);
         BallPid_SetTarget(ball_target);
     }
 

@@ -27,7 +27,8 @@ extern volatile uint8_t s_task_select;
 
 /* ── PID 对象 ── */
 extern PID_TypeDef yaw_pid;             /* 偏航角位置环 PID */
-extern PID_TypeDef ball_pid;            /* 小球位置环 PID（X 坐标） */
+extern PID_TypeDef ball_pid_pos;        /* 正目标 PID（X>0，短力臂侧） */
+extern PID_TypeDef ball_pid_neg;        /* 负目标 PID（X<0，长力臂侧） */
 
 /* PID 初始化（速度环 + 方向环 + 偏航角环） */
 void PID_Control_Init(void);
@@ -39,19 +40,18 @@ int32_t YawPid_Calc(float yaw_degrees); /* 计算偏航角 PID 输出（度，�
 void YawTest_Control(void);             /* 偏航角单独测试（纯差速，绕过速度环）  */
 
 /*
- * 小球位置环 — 摄像头 X 坐标 → 位置 PID → Stepmotor_SetAngle
+ * 小球位置环 — 摄像头 X 坐标 → 双向独立 PID → Stepmotor_SetAngle
  *
- * BallPid_Init:     初始化 PID 结构体（限制、死区、采样周期）
- * BallPid_SetTarget:设置目标 X 坐标（浮点，和 CAM_X 同量纲，支持小数点精度）
- * BallPid_Calc:     给定当前 X 坐标（浮点），内部缩放 100× 送整数 PID
- * Ball_Move_Control:完整控制周期 — 读 CAM_X → PID → Stepmotor_SetAngle
- * BallTest_Control: 单独测试 — CAM_X → PID(目标=0) → Stepmotor_SetAngle，丢球跳过
+ * BallPid_Init:     初始化 ball_pid_pos / ball_pid_neg 两个实例
+ * BallPid_SetTarget:同时设两个 PID 的目标，由 Move_Control 自动选 active
+ * BallPid_Calc:     给定当前 X 坐标，内部缩放 100× 送整数 PID
+ * Ball_Move_Control:自动选 pos/neg PID → 计算 → Stepmotor_SetAngle
+ * BallTest_Control: 单独测试版，含丢球保护 + 限幅
  */
 
-/* 步进电机输出限幅 + 非对称补偿 */
+/* 步进电机输出角度限幅 */
 #define BALL_ANGLE_MAX     20.0f    /* 电机正方向最大角度（°） */
 #define BALL_ANGLE_MIN    -20.0f    /* 电机负方向最大角度（°） */
-#define BALL_ASYM_GAIN     1.3f    /* 负目标输出补偿系数（>1=负方向多推）*/
 
 void BallPid_Init(void);
 void BallPid_SetTarget(float target_x);

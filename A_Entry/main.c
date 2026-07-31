@@ -85,7 +85,7 @@ int main(void)
 	LED_Init(LED_LOW);
 	KEY_Init();
 	OLED_Init(OLED_IF_SPI);
-	ICM42688_Init();
+	// ICM42688_Init();
 	API_Motor_Init();
 	API_Encoder_Init(API_ENCODER_1);
 	API_Encoder_Init(API_ENCODER_2);

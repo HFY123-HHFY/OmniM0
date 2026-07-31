@@ -53,10 +53,7 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     {
         tick_5ms = 0U;
         GrayADC_Task(&g_graySensor); /* 感为无MCU灰度 */
-
-        ICM42688_ReadSensor();            /* ICM42688 6轴 burst读 + 偏航积分 */
         Direction_Control();              /* 灰度环PID计算输出 */
-
         usart_FrameTimeout_Check(&USART_DataTypeStruct, 100U); /* 帧超时 100ms 自动复位 */
     }
 

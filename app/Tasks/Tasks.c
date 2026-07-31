@@ -67,12 +67,12 @@ static void Task_1(void)
  *
  * 调用频率：TIMG0 ISR 20ms（由 Task_Run 分发）。
  * ══════════════════════════════════════════════════════════════════════ */
+/* ── Task_2 可调参数 ── */
+#define TASK2_START_COOLDOWN  150U  /* 起步冷却，防起跑线误判终点  */
+#define TASK2_CONFIRM_CNT     0U    /* 终点消抖次数（0=立即触发）  */
+
 static void Task_2(void)
 {
-    /* ── 起步冷却 + 终点消抖 ── */
-    enum { START_COOLDOWN = 150U,        /* 150×20ms=3s, 起跑后冷却      */
-           CONFIRM_CNT    = 0U };       /* 5×20ms=100ms 终点消抖确认   */
-
     /* ── 状态机 ── */
     enum { STATE_FOLLOW = 0U, STATE_DONE };
 
@@ -80,44 +80,36 @@ static void Task_2(void)
     static uint8_t  s_last_gen   = 0U;
     static uint8_t  s_cooldown   = 0U;
     static uint8_t  s_confirm    = 0U;
-    static uint32_t s_start_tick = 0U;   /* 起跑时刻 tick             */
+    static uint32_t s_start_tick = 0U;
 
-    /* ── 首次启动 / KEY1 重新启动 ── */
     if (s_last_gen != s_gen)
     {
         s_last_gen   = s_gen;
         s_state      = STATE_FOLLOW;
-        s_cooldown   = (uint8_t)START_COOLDOWN;
+        s_cooldown   = (uint8_t)TASK2_START_COOLDOWN;
         s_confirm    = 0U;
         s_start_tick = g_sys_tick_ms;
 
-        /* 速度环 */
-        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 18.0f); /* 速度环 */
-        /* 灰度方向环 */
-        Set_PID(&direction_pid,  0.53f, 0.61f, 0.062f);/* 循迹环 */
+        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 19.0f);
+        Set_PID(&direction_pid,  0.53f, 0.61f, 0.062f);
     }
 
     switch (s_state)
     {
     case STATE_FOLLOW:
         LineFollow_Output();
-
-        /* 每周期更新圈时到外部只读变量（OLED 显示用）*/
         s_task2_lap_time_s = (g_sys_tick_ms - s_start_tick) / 1000U;
 
-        /* 起步冷却递减，防止起跑线被误判为终点 */
         if (s_cooldown > 0U) { s_cooldown--; }
-        /* 冷却期过后才检测终点：sensor[2] 和 [5] 同时见黑 */
         else if (g_graySensor.digital_bits[4] == 0U &&
                  g_graySensor.digital_bits[5] == 0U &&
                  g_graySensor.digital_bits[6] == 0U &&
-                 g_graySensor.digital_bits[7] == 0U )
+                 g_graySensor.digital_bits[7] == 0U)
         {
-            if (++s_confirm >= CONFIRM_CNT)
+            if (++s_confirm >= TASK2_CONFIRM_CNT)
             {
-                /* 一圈完成：冻结局时 + 停车 + 复位 PID */
                 s_state = STATE_DONE;
-                Task_Stop(750);               /* 反向刹车防惯性滑动 */
+                Task_Stop(750);
             }
         }
         else { s_confirm = 0U; }
@@ -145,6 +137,10 @@ static void Task_2(void)
  *
  * 调用频率：TIMG0 ISR 20ms（由 Task_Run 分发）。
  * ══════════════════════════════════════════════════════════════════════ */
+/* ── Task_3 可调参数 ── */
+#define TASK3_STABLE_THRESHOLD  1.0f  /* 到达判定：|CAM_X - target| ≤ 此值  */
+#define TASK3_CONFIRM_TICKS     25U   /* 稳定确认：25×20ms=500ms           */
+
 static void Task_3(void)
 {
     enum {
@@ -154,9 +150,6 @@ static void Task_3(void)
         PHASE_CONFIRM_N5,
         PHASE_DONE
     };
-
-    #define STABLE_THRESHOLD   1.0f    /* 到达判定：|error| ≤ 1.0  */
-    #define CONFIRM_TICKS      25U     /* 稳定确认：25×20ms=500ms */
 
     static uint8_t  s_state       = PHASE_TO_P5;
     static uint8_t  s_last_gen    = 0U;
@@ -186,9 +179,9 @@ static void Task_3(void)
                 float error = CAM_X - 5.0f;
                 if (error < 0.0f) error = -error;
 
-                if (error <= STABLE_THRESHOLD)
+                if (error <= TASK3_STABLE_THRESHOLD)
                 {
-                    if (++s_confirm_cnt >= CONFIRM_TICKS)
+                    if (++s_confirm_cnt >= TASK3_CONFIRM_TICKS)
                     {
                         s_confirm_cnt = 0U;
                         s_state       = PHASE_CONFIRM_P5;
@@ -204,7 +197,7 @@ static void Task_3(void)
             {
                 Ball_Move_Control();
 
-                if (++s_confirm_cnt >= CONFIRM_TICKS)
+                if (++s_confirm_cnt >= TASK3_CONFIRM_TICKS)
                 {
                     s_confirm_cnt = 0U;
                     PID_Reset(&ball_pid_neg);      /* 切负目标：清 neg I 项 */
@@ -222,9 +215,9 @@ static void Task_3(void)
                 float error = CAM_X - (-5.0f);
                 if (error < 0.0f) error = -error;
 
-                if (error <= STABLE_THRESHOLD)
+                if (error <= TASK3_STABLE_THRESHOLD)
                 {
-                    if (++s_confirm_cnt >= CONFIRM_TICKS)
+                    if (++s_confirm_cnt >= TASK3_CONFIRM_TICKS)
                     {
                         s_confirm_cnt = 0U;
                         s_state       = PHASE_CONFIRM_N5;
@@ -240,7 +233,7 @@ static void Task_3(void)
             {
                 Ball_Move_Control();
 
-                if (++s_confirm_cnt >= CONFIRM_TICKS)
+                if (++s_confirm_cnt >= TASK3_CONFIRM_TICKS)
                 {
                     s_state = PHASE_DONE;
                 }
@@ -260,89 +253,104 @@ static void Task_3(void)
 /* ══════════════════════════════════════════════════════════════════════
  * Task_4 — 双系统协同：灰度循迹 + 小球位置控制
  *
- * 小车方面：
- *   A 点出发，灰度循迹 + 速度环控制，监控 ICM42688 偏航角。
- *   起步冷却期内不检测偏航角（防起跑误触发）。
- *   冷却期过后，当偏航角 ≤ TASK4_CORNER_YAW_DEG 时（直走≈0°，
- *   拐到 B 点≈-90°），认为到达曲线拐角 → 平滑减速 → 直行通过 B → 停车。
+ * 时间线（从 KEY1 按下开始，20ms/tick）：
+ *   [0~1.5s]  软启动：速度从 0 线性缓升到巡航速度
+ *   [1.5s~]   全速巡航 + 灰度循迹
+ *   [触发]    极缓平滑减速至零，无时间限制，停车无感
  *
- * 摆杆方面：
- *   全过程小球位置环始终控制步进电机，将小球稳定在 X=0。
+ * 小车控制：软启动 → 巡航循迹 → 极缓减速停车。
  *
  * 调用频率：TIMG0 ISR 20ms（由 Task_Run 分发）。
  * ══════════════════════════════════════════════════════════════════════ */
 
-/* ── 可调参数 ── */
-#define TASK4_START_COOLDOWN      150U    /* 起步冷却（150×20ms=3s，防起跑误触发） */
-#define TASK4_CORNER_YAW_DEG      -80.0f  /* 偏航角阈值（°），≤此值=到达B点拐角    */
-#define TASK4_CRUISE_SPEED        12      /* 巡航速度（编码器单位）                  */
-#define TASK4_DECEL_STEPS         35U     /* 减速步数（25×20ms=500ms 平滑减速）     */
-#define TASK4_PASS_TICKS          50U     /* 通过B点延时（50×20ms=1s，确保车尾过B） */
+/* ── Task_4 可调参数 ── */
+#define TASK4_SOFT_START_STEPS   40U   /* 软启动步数，越小越快达巡航      */
+#define TASK4_CRUISE_TIME_TICKS  500U  /* 触发减速的全局计时（10s）       */
+#define TASK4_CRUISE_SPEED       14    /* 巡航速度（编码器单位）          */
+#define TASK4_DECEL_STEPS        700U  /* 减速步数，越大停车越平滑        */
 
 static void Task_4(void)
 {
     /* ── 状态机 ── */
     enum {
-        STATE_CRUISE = 0U,     /* 循迹巡航 + 起步冷却 + 监控偏航角       */
-        STATE_DECEL,           /* 检测到拐角 → 平滑减速                  */
-        STATE_PASS,            /* 减速完成 → 直行延时，确保车尾通过 B 点  */
-        STATE_DONE             /* 通过 B 点，停车，小球继续控制           */
+        STATE_SOFT_START = 0U, /* 软启动：速度 0 → CRUISE_SPEED             */
+        STATE_CRUISE,          /* 全速巡航循迹，等计时到                     */
+        STATE_DECEL,           /* 极缓平滑减速，无时间压力                   */
+        STATE_DONE             /* 停车完成                                  */
     };
 
     /* ── 静态变量（s_gen 感知 KEY1 重新启动）── */
-    static uint8_t  s_state       = STATE_CRUISE;
+    static uint8_t  s_state       = STATE_SOFT_START;
     static uint8_t  s_last_gen    = 0U;
-    static uint8_t  s_decel_step  = 0U;
-    static uint8_t  s_pass_tick   = 0U;
-    static uint8_t  s_cooldown    = 0U;
+    static uint16_t s_timer       = 0U;    /* 全局计时器（20ms/tick）        */
+    static uint16_t s_ramp_step   = 0U;
+    static uint16_t s_decel_step  = 0U;
 
     /* ── 首次启动 / KEY1 重新启动 ── */
     if (s_last_gen != s_gen)
     {
         s_last_gen   = s_gen;
-        s_state      = STATE_CRUISE;
+        s_state      = STATE_SOFT_START;
+        s_timer      = 0U;
+        s_ramp_step  = 0U;
         s_decel_step = 0U;
-        s_pass_tick  = 0U;
-        s_cooldown   = (uint8_t)TASK4_START_COOLDOWN;
 
-        /* ── 小车：低速巡航循迹 ── */
-        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, TASK4_CRUISE_SPEED); /* 速度环 */
-        Set_PID(&direction_pid,  0.40f, 0.08f, 0.010f);/* 循迹环 */
+        /* ── 小车：初始速度=0，软启动阶段再缓升 ── */
+        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 0);
+        Set_PID(&direction_pid,  0.40f, 0.08f, 0.010f);
 
         /* ── 小球位置环：目标 X=0（始终控制）── */
-        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -65.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
-        Set_PID(&ball_pid_neg, -5.0f, -30.0f, -95.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -65.0f);
+        Set_PID(&ball_pid_neg, -5.0f, -30.0f, -95.0f);
         BallPid_SetTarget(0.0f);
     }
 
     /* ════════════════════════════════════════════════════════════════
-     * 小球位置控制 — 全阶段持续，不受小车状态影响。
-     * 丢球时（CAM_VALID=0）跳过控制，保持当前位置，防止追噪声。
+     * 小球位置控制 — 停车后释放，电机自保持。
      * ════════════════════════════════════════════════════════════════ */
-    if (CAM_VALID > 0.5f)
+    if (CAM_VALID > 0.5f && s_state != STATE_DONE)
     {
         Ball_Move_Control();
     }
 
-    /* ════════════════════════════════════════════════════════════════
-     * 读取当前偏航角（ICM42688 上电归零，直走≈0°，拐弯≈-90°）
-     * ════════════════════════════════════════════════════════════════ */
-    ICM42688_Data_t snap;
-    ICM42688_GetSnapshot(&snap);
+    /* ── 全局计时器：从 KEY1 按下开始，每 20ms +1 ── */
+    s_timer++;
 
     /* ════════════════════════════════════════════════════════════════
      * 小车状态机
      * ════════════════════════════════════════════════════════════════ */
     switch (s_state)
     {
-    case STATE_CRUISE:
-        /* 灰度循迹 + 速度环 */
+    case STATE_SOFT_START:
+    {
+        /*
+         * 软启动：速度从 0 线性缓升到 CRUISE_SPEED。
+         * 缓升防止起步惯性导致小球位置突变。
+         */
+        int32_t target = (int32_t)((uint32_t)s_ramp_step * (uint32_t)TASK4_CRUISE_SPEED
+                                   / TASK4_SOFT_START_STEPS);
+        if (target > TASK4_CRUISE_SPEED) { target = TASK4_CRUISE_SPEED; }
+
+        PID_SetTarget(&speed_loop.left,  target);
+        PID_SetTarget(&speed_loop.right, target);
         LineFollow_Output();
 
-        /* 起步冷却递减（防起跑误触发偏航角检测） */
-        if (s_cooldown > 0U) { s_cooldown--; }
-        /* 冷却期过后：偏航角 ≤ 阈值 → 到达 B 点拐角，开始减速 */
-        else if (snap.yaw <= TASK4_CORNER_YAW_DEG)
+        s_ramp_step++;
+        if (s_ramp_step >= TASK4_SOFT_START_STEPS)
+        {
+            /* 软启动完成 → 锁定巡航速度，进入全速巡航 */
+            PID_SetTarget(&speed_loop.left,  TASK4_CRUISE_SPEED);
+            PID_SetTarget(&speed_loop.right, TASK4_CRUISE_SPEED);
+            s_state = STATE_CRUISE;
+        }
+        break;
+    }
+
+    case STATE_CRUISE:
+        /* 全速巡航 + 灰度循迹，等计时到 */
+        LineFollow_Output();
+
+        if (s_timer >= TASK4_CRUISE_TIME_TICKS)
         {
             s_state      = STATE_DECEL;
             s_decel_step = 0U;
@@ -352,8 +360,8 @@ static void Task_4(void)
     case STATE_DECEL:
     {
         /*
-         * 平滑减速：逐步降低速度目标值。
-         * 从 CRUISE_SPEED 线性降到 0，分 DECEL_STEPS 步完成。
+         * 极缓平滑减速：线性降速，750 步 × 20ms = 15 秒从巡航到零。
+         * 速度环 PID 自然跟踪极缓慢下降的目标，停车无感。
          */
         int32_t target = TASK4_CRUISE_SPEED
                        - (int32_t)((uint32_t)s_decel_step * (uint32_t)TASK4_CRUISE_SPEED
@@ -365,27 +373,8 @@ static void Task_4(void)
         LineFollow_Output();
 
         s_decel_step++;
-
-        /* 减速完成 → 进入通过阶段（车头已过 B，等车尾也过去） */
         if (s_decel_step >= TASK4_DECEL_STEPS)
         {
-            s_state     = STATE_PASS;
-            s_pass_tick = 0U;
-        }
-        break;
-    }
-
-    case STATE_PASS:
-        /*
-         * 直行通过 B 点：减速已完成（target=0），车靠惯性/低速
-         * 继续直行 TASK4_PASS_TICKS 帧，确保车尾完全通过 B 点。
-         * 期间不再循迹（已过弯道），仅维持小球控制。
-         */
-        s_pass_tick++;
-
-        if (s_pass_tick >= TASK4_PASS_TICKS)
-        {
-            /* 通过完成 → 停车 + 复位循迹 PID（小球 PID 不动） */
             API_Motor_SetSpeed(0, 0);
             PID_Reset(&direction_pid);
             PID_Reset(&speed_loop.left);
@@ -393,6 +382,7 @@ static void Task_4(void)
             s_state = STATE_DONE;
         }
         break;
+    }
 
     case STATE_DONE:
         /* 小车已停，小球位置环继续在 Ball_Move_Control() 中运行 */
@@ -401,111 +391,153 @@ static void Task_4(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════
- * 通用：灰度循迹一圈 + 小球位置控制（Task_5 / Task_6 共用）
+ * 通用：灰度循迹一圈 + 二次软启动 + 极缓减速停车 + 小球位置控制
+ *      （Task_5 / Task_6 共用）
  *
- * 小车方面：
- *   A 点出发，灰度循迹 + 速度环控制，顺时针循黑线跑一圈。
- *   起步冷却期内不检测终点（防起跑线误触发）。
- *   冷却期过后，灰度传感器 [4][5][6] 同时见黑 → 回到 A 点。
- *   消抖确认后，继续行驶 TASK_CB_PASS_TICKS 帧确保车尾通过 A，
- *   之后停车 + 复位循迹 PID。
+ * 时间线：
+ *   [软启动]  二次函数曲线缓升 0→巡航速度（初段极柔）
+ *   [巡航]    全速循迹，冷却期后检测终点（灰度[4][5][6][7]全黑=回到A点）
+ *   [计时]    检测到A点后非阻塞计时 10s，继续循迹
+ *   [减速]    极缓平滑减速至零，无时间限制，停车无感
+ *   [停车后]  释放步进电机，自保持
  *
- * 摆杆方面：
- *   全过程小球位置环始终控制步进电机，将小球稳定在 ball_target 处。
- *
- * @param ball_target  小球目标 X 坐标（浮点，-12.0~+12.0）
- *
- * 调用者：
- *   Task_5 → ball_target = 0.0f
- *   Task_6 → ball_target = (float)g_task6_ball_target（评委现场指定）
+ * 小车控制：二次软启动 → 巡航循迹 → 回A点触发计时 → 极缓减速停车。
+ * 小球由外部独立控制。
  *
  * 调用频率：TIMG0 ISR 20ms（由 Task_Run 分发）。
  * ══════════════════════════════════════════════════════════════════════ */
 
-/* ── 可调参数 ── */
-#define TASK_CB_START_COOLDOWN   150U    /* 起步冷却（150×20ms=3s）          */
-#define TASK_CB_CRUISE_SPEED     10      /* 巡航速度（编码器单位）           */
-#define TASK_CB_CONFIRM_CNT      0U      /* 终点消抖确认（0=立即触发）       */
-#define TASK_CB_PASS_TICKS       10U     /* 通过 A 点延时（10×20ms=200ms）   */
+/* ── Task_5/6 可调参数（共用）── */
+#define TASK_CB_SOFT_START_STEPS  40U   /* 软启动步数，越小越快达巡航        */
+#define TASK_CB_CRUISE_SPEED      13    /* 巡航速度（编码器单位）            */
+#define TASK_CB_START_COOLDOWN    250U  /* 起步冷却，防起跑线误判终点（5s）  */
+#define TASK_CB_CONFIRM_CNT       0U    /* 终点消抖次数（0=立即触发）        */
+#define TASK_CB_POST_LAP_TICKS    200U  /* 回A点后继续巡航计时（4s）         */
+#define TASK_CB_DECEL_STEPS       700U  /* 减速步数，越大停车越平滑（14s）   */
 
 static void Task_CruiseWithBall(float ball_target)
 {
     /* ── 状态机 ── */
     enum {
-        STATE_CRUISE = 0U,     /* 循迹巡航 + 起步冷却 + 检测终点         */
-        STATE_PASS,            /* 检测到终点 → 直行延时，确保通过 A 点   */
-        STATE_DONE             /* 通过 A 点，停车，小球继续控制          */
+        STATE_SOFT_START = 0U, /* 二次软启动：速度 0 → CRUISE_SPEED         */
+        STATE_CRUISE,          /* 全速巡航 + 冷却 + 检测终点（回到A点）     */
+        STATE_POST_LAP,        /* 已过A点，非阻塞计时继续循迹               */
+        STATE_DECEL,           /* 极缓平滑减速，无时间压力                   */
+        STATE_DONE             /* 停车完成，释放步进电机                     */
     };
 
     /* ── 静态变量（s_gen 感知 KEY1 重新启动）── */
-    static uint8_t  s_state       = STATE_CRUISE;
+    static uint8_t  s_state       = STATE_SOFT_START;
     static uint8_t  s_last_gen    = 0U;
+    static uint16_t s_timer       = 0U;    /* 非阻塞计时器（20ms/tick）      */
+    static uint16_t s_ramp_step   = 0U;
+    static uint16_t s_decel_step  = 0U;
     static uint8_t  s_cooldown    = 0U;
     static uint8_t  s_confirm     = 0U;
-    static uint8_t  s_pass_tick   = 0U;
 
     /* ── 首次启动 / KEY1 重新启动 ── */
     if (s_last_gen != s_gen)
     {
         s_last_gen   = s_gen;
-        s_state      = STATE_CRUISE;
+        s_state      = STATE_SOFT_START;
+        s_timer      = 0U;
+        s_ramp_step  = 0U;
+        s_decel_step = 0U;
         s_cooldown   = (uint8_t)TASK_CB_START_COOLDOWN;
         s_confirm    = 0U;
-        s_pass_tick  = 0U;
 
-        /* ── 小车：低速巡航循迹 ── */
-        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, TASK_CB_CRUISE_SPEED);
+        /* ── 小车：初始速度=0，软启动缓升 ── */
+        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 0);
         Set_PID(&direction_pid, 0.50f, 0.15f, 0.010f);
 
-        /* ── 小球位置环：目标由参数指定 ── */
-        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -65.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
-        Set_PID(&ball_pid_neg, -5.0f, -30.0f, -95.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        /* ── 小球位置环 ── */
+        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -65.0f);
+        Set_PID(&ball_pid_neg, -5.0f, -30.0f, -95.0f);
         BallPid_SetTarget(ball_target);
     }
 
-    /* ════════════════════════════════════════════════════════════════
-     * 小球位置控制 — 全阶段持续。
-     * 丢球时（CAM_VALID=0）跳过控制，保持当前位置，防止追噪声。
-     * ════════════════════════════════════════════════════════════════ */
-    if (CAM_VALID > 0.5f)
+    /* ── 小球位置控制 — 停车后释放，电机自保持 ── */
+    if (CAM_VALID > 0.5f && s_state != STATE_DONE)
     {
         Ball_Move_Control();
     }
 
-    /* ════════════════════════════════════════════════════════════════
-     * 小车状态机
-     * ════════════════════════════════════════════════════════════════ */
+    /* ── 全局计时器：每 20ms +1 ── */
+    s_timer++;
+
+    /* ── 小车状态机 ── */
     switch (s_state)
     {
+    case STATE_SOFT_START:
+    {
+        /* 软启动：速度从 0 线性缓升到 CRUISE_SPEED */
+        int32_t target = (int32_t)((uint32_t)s_ramp_step * (uint32_t)TASK_CB_CRUISE_SPEED
+                                   / TASK_CB_SOFT_START_STEPS);
+        if (target > TASK_CB_CRUISE_SPEED) { target = TASK_CB_CRUISE_SPEED; }
+
+        PID_SetTarget(&speed_loop.left,  target);
+        PID_SetTarget(&speed_loop.right, target);
+        LineFollow_Output();
+
+        if (s_cooldown > 0U) { s_cooldown--; }
+
+        s_ramp_step++;
+        if (s_ramp_step >= TASK_CB_SOFT_START_STEPS)
+        {
+            PID_SetTarget(&speed_loop.left,  TASK_CB_CRUISE_SPEED);
+            PID_SetTarget(&speed_loop.right, TASK_CB_CRUISE_SPEED);
+            s_state = STATE_CRUISE;
+        }
+        break;
+    }
+
     case STATE_CRUISE:
         LineFollow_Output();
 
-        if (s_cooldown > 0U)
-        {
-            s_cooldown--;
-        }
+        if (s_cooldown > 0U) { s_cooldown--; }
         else if (g_graySensor.digital_bits[4] == 0U &&
                  g_graySensor.digital_bits[5] == 0U &&
                  g_graySensor.digital_bits[6] == 0U &&
-                 g_graySensor.digital_bits[7] == 0U )
+                 g_graySensor.digital_bits[7] == 0U)
         {
             if (++s_confirm >= TASK_CB_CONFIRM_CNT)
             {
-                s_state     = STATE_PASS;
-                s_pass_tick = 0U;
+                /* 检测到A点 → 开始非阻塞计时，继续循迹 */
+                s_state = STATE_POST_LAP;
+                s_timer = 0U;
             }
         }
-        else
+        else { s_confirm = 0U; }
+        break;
+
+    case STATE_POST_LAP:
+        /* 已过A点，继续巡航循迹，等计时器到 10s */
+        LineFollow_Output();
+
+        if (s_timer >= TASK_CB_POST_LAP_TICKS)
         {
-            s_confirm = 0U;
+            s_state      = STATE_DECEL;
+            s_decel_step = 0U;
         }
         break;
 
-    case STATE_PASS:
-        LineFollow_Output();
-        s_pass_tick++;
+    case STATE_DECEL:
+    {
+        /*
+         * 极缓平滑减速：线性降速，750 步 × 20ms = 15 秒从巡航到零。
+         * 速度环 PID 自然跟踪极缓慢下降的目标，停车无感。
+         */
+        int32_t target = TASK_CB_CRUISE_SPEED
+                       - (int32_t)((uint32_t)s_decel_step * (uint32_t)TASK_CB_CRUISE_SPEED
+                                   / TASK_CB_DECEL_STEPS);
+        if (target < 0) { target = 0; }
 
-        if (s_pass_tick >= TASK_CB_PASS_TICKS)
+        PID_SetTarget(&speed_loop.left,  target);
+        PID_SetTarget(&speed_loop.right, target);
+        LineFollow_Output();
+
+        s_decel_step++;
+        if (s_decel_step >= TASK_CB_DECEL_STEPS)
         {
             API_Motor_SetSpeed(0, 0);
             PID_Reset(&direction_pid);
@@ -514,6 +546,7 @@ static void Task_CruiseWithBall(float ball_target)
             s_state = STATE_DONE;
         }
         break;
+    }
 
     case STATE_DONE:
         break;

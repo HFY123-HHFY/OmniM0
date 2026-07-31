@@ -39,11 +39,6 @@ extern "C" {
  * 注意：如果未调用 GrayADC_InitSensor()，驱动会在首次 Task 时自动使用默认值。
  */
 /* 顺序已翻转为 sensor[0]=最右路, sensor[7]=最左路 */
-// #define GRAY_ADC_WHITE_DEFAULT  { 3073U, 3216U, 3209U, 3038U, \
-//                                   3131U, 3085U, 2738U, 3189U }
-// #define GRAY_ADC_BLACK_DEFAULT  {  93U, 1826U,  332U, 131U, \
-//                                    248U, 177U, 82U,  1036U }
-
 #define GRAY_ADC_WHITE_DEFAULT  { 4080U, 4080U, 4081U, 4081U, \
                                   4080U, 4080U, 4080U, 4080U }
 #define GRAY_ADC_BLACK_DEFAULT  {  3U, 3U,  3U, 3U, \

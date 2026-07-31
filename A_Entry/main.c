@@ -104,7 +104,7 @@ int main(void)
 	// Stepmotor_CalibrateOnce();
 
 	Stepmotor_BootInit(); /* 驱动板 5s 内未上线 — 检查接线/供电/波特率后复位 */
-	Stepmotor_ConfigMove(1000.0f, 1000.0f);  // 800RPM中等偏上，加速0xFE满档秒到
+	Stepmotor_ConfigMove(1000.0f, 2000.0f);  // 800RPM中等偏上，加速0xFE满档秒到
 
 	// PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 20.0f); /* 速度环 */
 	// Set_PID(&direction_pid,  0.40f, 0.08f, 0.010f); /* 循迹环：降kp防振荡, 降ki缓积 */

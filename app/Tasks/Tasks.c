@@ -310,8 +310,8 @@ static void Task_4(void)
         Set_PID(&direction_pid,  0.40f, 0.08f, 0.010f);/* 循迹环 */
 
         /* ── 小球位置环：目标 X=0（始终控制）── */
-        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -45.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
-        Set_PID(&ball_pid_neg, -20.0f, -40.0f, -55.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -65.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_neg, -5.0f, -30.0f, -95.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
         BallPid_SetTarget(0.0f);
     }
 
@@ -458,8 +458,8 @@ static void Task_CruiseWithBall(float ball_target)
         Set_PID(&direction_pid, 0.50f, 0.15f, 0.010f);
 
         /* ── 小球位置环：目标由参数指定 ── */
-        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -45.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
-        Set_PID(&ball_pid_neg, -20.0f, -40.0f, -55.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -65.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_neg, -5.0f, -30.0f, -95.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
         BallPid_SetTarget(ball_target);
     }
 
@@ -484,10 +484,10 @@ static void Task_CruiseWithBall(float ball_target)
         {
             s_cooldown--;
         }
-        else if (g_graySensor.digital_bits[2] == 0U &&
-                 g_graySensor.digital_bits[3] == 0U &&
-                 g_graySensor.digital_bits[4] == 0U &&
-                 g_graySensor.digital_bits[5] == 0U )
+        else if (g_graySensor.digital_bits[4] == 0U &&
+                 g_graySensor.digital_bits[5] == 0U &&
+                 g_graySensor.digital_bits[6] == 0U &&
+                 g_graySensor.digital_bits[7] == 0U )
         {
             if (++s_confirm >= TASK_CB_CONFIRM_CNT)
             {

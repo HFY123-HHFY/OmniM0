@@ -27,7 +27,7 @@ set(APP_LAYER_SOURCES
     ${CMAKE_SOURCE_DIR}/A_Entry/main.c
     ${CMAKE_SOURCE_DIR}/app/Control/Control.c
     ${CMAKE_SOURCE_DIR}/app/Tasks/Tasks.c
-    ${CMAKE_SOURCE_DIR}/app/Detect/Detect.c
+
     ${CMAKE_SOURCE_DIR}/app/My_Usart/My_Usart.c
     ${CMAKE_SOURCE_DIR}/app/Control_Task/Control_Task.c
     ${CMAKE_SOURCE_DIR}/app/PID/PID.c
@@ -61,7 +61,7 @@ set(COMMON_INCLUDE_DIRS
     ${CMAKE_SOURCE_DIR}/app/Control_Task
     ${CMAKE_SOURCE_DIR}/app/Control
     ${CMAKE_SOURCE_DIR}/app/Tasks
-    ${CMAKE_SOURCE_DIR}/app/Detect
+
     ${CMAKE_SOURCE_DIR}/app/My_Usart
     ${CMAKE_SOURCE_DIR}/app/PID
     ${CMAKE_SOURCE_DIR}/app/Filter

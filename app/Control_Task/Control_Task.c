@@ -11,7 +11,6 @@
 #include "API_Motor.h"
 #include "ICM42688.h"
 #include "gray_adc.h"
-#include "IR_Line.h"
 #include "StepMotor.h"
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -54,7 +53,6 @@ void Control_Task_TIM_Callback(API_TIM_Id_t id)
     {
         tick_5ms = 0U;
         GrayADC_Task(&g_graySensor); /* 感为无MCU灰度 */
-        // IRLine_Task(&g_irLine);         /* 幻尔八路红外循迹 */
 
         ICM42688_ReadSensor();            /* ICM42688 6轴 burst读 + 偏航积分 */
         Direction_Control();              /* 灰度环PID计算输出 */

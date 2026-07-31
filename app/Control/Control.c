@@ -27,7 +27,6 @@ PID_TypeDef yaw_pid;
 PID_TypeDef ball_pid_pos;       /* 正目标（X>0，短力臂侧：小球靠近电机枢轴）    */
 PID_TypeDef ball_pid_neg;       /* 负目标（X<0，长力臂侧：小球远离电机枢轴）    */
 
-/* 幻尔红外传感器实例 — IR_Line.c 定义，此处 extern 引用（Control.h） */
 
 /* 感为灰度传感器实例 — gray_adc.c 内部引用，保留兼容 */
 GrayADC_Sensor_t g_graySensor;
@@ -139,7 +138,7 @@ static int32_t g_steer = 0;
 /* =========================================================================
  * Direction_Control — 方向环（TIMG0 ISR 5ms）
  *
- * 幻尔红外线位置 → 方向 PID → g_steer（整数，全部 Q16.16 计算在 PID 库内完成）
+ * 灰度传感器线位置 → 方向 PID → g_steer（整数，全部 Q16.16 计算在 PID 库内完成）
  * ========================================================================= */
 void Direction_Control(void)
 {

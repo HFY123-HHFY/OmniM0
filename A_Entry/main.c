@@ -31,13 +31,12 @@
 #include "API_Motor.h"
 #include "ICM42688.h"
 #include "gray_adc.h"
-#include "IR_Line.h"
 #include "StepMotor.h"
 #include "MPU6050.h"
 #include "MPU6050_Int.h"
 
 /* ── 调试开关 ── */
-#define DEBUG_PRINT_ENABLE  1U
+#define DEBUG_PRINT_ENABLE  0U
 #define DEBUG_OLED_ENABLE   1U
 
 int main(void)
@@ -91,7 +90,6 @@ int main(void)
 	API_Encoder_Init(API_ENCODER_1);
 	API_Encoder_Init(API_ENCODER_2);
 	PID_Control_Init();
-	IRLine_Init(&g_irLine);
 	/* ══════════════════════════════════════════════════════════════════
 	 * 阶段 4：启动系统时基
 	 * ══════════════════════════════════════════════════════════════════ */
@@ -109,7 +107,7 @@ int main(void)
 	Stepmotor_ConfigMove(120.0f, 30.0f);   // 120RPM，30档加速（匹配小球惯性，防过冲）
 
 	// PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 20.0f); /* 速度环 */
-	// Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
+	// Set_PID(&direction_pid,  0.40f, 0.08f, 0.010f); /* 循迹环：降kp防振荡, 降ki缓积 */
 	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f); /* 偏航环 */
 	// Set_PID(&ball_pid_pos, -8.0f, -20.0f, -35.0f);  /* 正目标侧：短力臂 */
 	// Set_PID(&ball_pid_neg, -8.0f, -20.0f, -35.0f);  /* 负目标侧：长力臂，大kp+kd */
@@ -144,7 +142,7 @@ int main(void)
 		{
 			tasks.print_50ms.flag = false;
 			// GrayADC_PrintBits(&g_graySensor, USART1); 
-			// GrayADC_PrintRaw(&g_graySensor, USART3); /* 校准感为灰度 */ 
+			GrayADC_PrintRaw(&g_graySensor, USART3); /* 校准感为灰度 */ 
 		}
 #endif
 

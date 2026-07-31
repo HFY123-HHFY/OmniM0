@@ -116,7 +116,7 @@ static void Task_2(void)
             {
                 /* 一圈完成：冻结局时 + 停车 + 复位 PID */
                 s_state = STATE_DONE;
-                Task_Stop(50);               /* 反向刹车防惯性滑动 */
+                Task_Stop(10);               /* 反向刹车防惯性滑动 */
             }
         }
         else { s_confirm = 0U; }
@@ -273,8 +273,8 @@ static void Task_3(void)
 #define TASK4_START_COOLDOWN      150U    /* 起步冷却（150×20ms=3s，防起跑误触发） */
 #define TASK4_CORNER_YAW_DEG      -80.0f  /* 偏航角阈值（°），≤此值=到达B点拐角    */
 #define TASK4_CRUISE_SPEED        10      /* 巡航速度（编码器单位）                  */
-#define TASK4_DECEL_STEPS         25U     /* 减速步数（25×20ms=500ms 平滑减速）     */
-#define TASK4_PASS_TICKS          50U     /* 通过B点延时（50×20ms=1s，确保车尾过B） */
+#define TASK4_DECEL_STEPS         100U    /* 减速步数（100×20ms=2s 龟速停车）       */
+#define TASK4_PASS_TICKS          20U     /* 通过B点延时（20×20ms=400ms 车头已过）   */
 
 static void Task_4(void)
 {
@@ -373,16 +373,14 @@ static void Task_4(void)
 
     case STATE_PASS:
         /*
-         * 直行通过 B 点：减速已完成（target=0），车靠惯性/低速
-         * 继续直行 TASK4_PASS_TICKS 帧，确保车尾完全通过 B 点。
-         * 期间不再循迹（已过弯道），仅维持小球控制。
+         * 减速已完成（target=0），PID 自然把车停在 0 速。
+         * 不再调 API_Motor_SetSpeed —— 避免急断电抖动，小球无感。
          */
         s_pass_tick++;
 
         if (s_pass_tick >= TASK4_PASS_TICKS)
         {
-            /* 通过完成 → 停车 + 复位循迹 PID（小球 PID 不动） */
-            API_Motor_SetSpeed(0, 0);
+            /* 停车完成：仅复位循迹 PID，不硬切电机电源 */
             PID_Reset(&direction_pid);
             PID_Reset(&speed_loop.left);
             PID_Reset(&speed_loop.right);
@@ -391,7 +389,7 @@ static void Task_4(void)
         break;
 
     case STATE_DONE:
-        /* 小车已停，小球位置环继续在 Ball_Move_Control() 中运行 */
+        /* 小车已自然停下，小球位置环继续运行 */
         break;
     }
 }
@@ -590,7 +588,7 @@ void Task_Run(void)
         Key = 0U;
         if (s_task_running != 0U)
         {
-            Task_Stop(2000);    /* 紧急刹车：反向 2000，200ms 后归零 */
+            Task_Stop(0);    /* 刹车 */
         }
     }
 
@@ -623,6 +621,6 @@ void Task_Run(void)
         case 4U: Task_4(); break;
         case 5U: Task_5(); break;
         case 6U: Task_6(); break;
-        default: Task_Stop(2000); break;    /* 无效任务号 → 急刹车 */
+        default: Task_Stop(0); break;
     }
 }

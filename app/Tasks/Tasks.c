@@ -92,9 +92,9 @@ static void Task_2(void)
         s_start_tick = g_sys_tick_ms;
 
         /* 速度环 */
-        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 20.0f); /* 速度环 */
+        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 15.0f); /* 速度环 */
         /* 灰度方向环 */
-        Set_PID(&direction_pid,  0.60f, 0.08f, 0.010f);/* 循迹环 */
+        Set_PID(&direction_pid,  0.40f, 0.42f, 0.005f);/* 循迹环 */
     }
 
     switch (s_state)
@@ -108,9 +108,10 @@ static void Task_2(void)
         /* 起步冷却递减，防止起跑线被误判为终点 */
         if (s_cooldown > 0U) { s_cooldown--; }
         /* 冷却期过后才检测终点：sensor[2] 和 [5] 同时见黑 */
-        else if (g_graySensor.digital_bits[4] == 0U &&
+        else if (g_graySensor.digital_bits[3] == 0U &&
+                 g_graySensor.digital_bits[4] == 0U &&
                  g_graySensor.digital_bits[5] == 0U &&
-                 g_graySensor.digital_bits[6] == 0U)
+                 g_graySensor.digital_bits[6] == 0U )
         {
             if (++s_confirm >= CONFIRM_CNT)
             {
@@ -483,9 +484,10 @@ static void Task_CruiseWithBall(float ball_target)
         {
             s_cooldown--;
         }
-        else if (g_graySensor.digital_bits[4] == 0U &&
-                 g_graySensor.digital_bits[5] == 0U &&
-                 g_graySensor.digital_bits[6] == 0U)
+        else if (g_graySensor.digital_bits[2] == 0U &&
+                 g_graySensor.digital_bits[3] == 0U &&
+                 g_graySensor.digital_bits[4] == 0U &&
+                 g_graySensor.digital_bits[5] == 0U )
         {
             if (++s_confirm >= TASK_CB_CONFIRM_CNT)
             {

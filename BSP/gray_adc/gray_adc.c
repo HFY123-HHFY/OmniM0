@@ -579,6 +579,9 @@ int32_t GrayADC_LinePosition(GrayADC_Sensor_t *sensor)
         dark = sensor->bits - (int32_t)sensor->normalized[i];
         if (dark < 0) { dark = 0; }
 
+        /* ── 左四右六权重：S0~S3 权重 4，S4~S7 权重 6 ── */
+        dark = dark * ((i < 4U) ? 4 : 6);
+
         /* 物理位置 = i × 间距 × 100 */
         weighted += dark * (int32_t)i * step;
         total    += dark;

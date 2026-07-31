@@ -111,9 +111,8 @@ int main(void)
 	// PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 20.0f); /* 速度环 */
 	// Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
 	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f); /* 偏航环 */
-	// Set_PID(&ball_pid, 150.0f, 10.0f, 10.0f);  /* 小球位置环：中kp, 轻ki消静差, 轻kd */
-	// Set_PID(&ball_pid_pos, -23.0f, -23.0f, -35.0f);  /* 正目标侧：短力臂 */
-	// Set_PID(&ball_pid_neg, -30.0f, -22.0f, -45.0f);  /* 负目标侧：长力臂，大kp+kd */
+	// Set_PID(&ball_pid_pos, -8.0f, -20.0f, -35.0f);  /* 正目标侧：短力臂 */
+	// Set_PID(&ball_pid_neg, -8.0f, -20.0f, -35.0f);  /* 负目标侧：长力臂，大kp+kd */
 	// BallPid_SetTarget(5.0f);                      /* 目标 X（同时设 pos/neg） */
 
 	Buzzer_Beep(100);

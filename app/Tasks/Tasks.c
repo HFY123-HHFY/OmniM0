@@ -170,8 +170,8 @@ static void Task_3(void)
 
         PID_Reset(&ball_pid_pos);
         PID_Reset(&ball_pid_neg);
-        Set_PID(&ball_pid_pos, -23.0f, -23.0f, -35.0f);  /* 正目标侧：短力臂 */
-        Set_PID(&ball_pid_neg, -30.0f, -22.0f, -45.0f);  /* 负目标侧：长力臂，大kp+kd */
+        Set_PID(&ball_pid_pos, -9.0f, -20.0f, -35.0f);  /* 正目标侧：短力臂 */
+        Set_PID(&ball_pid_neg, -9.0f, -30.0f, -35.0f);  /* 负目标侧：长力臂，大kp+kd */
         BallPid_SetTarget(5.0f);         /* 第一阶段：X = +5.0 */
     }
 
@@ -273,8 +273,8 @@ static void Task_3(void)
 #define TASK4_START_COOLDOWN      150U    /* 起步冷却（150×20ms=3s，防起跑误触发） */
 #define TASK4_CORNER_YAW_DEG      -80.0f  /* 偏航角阈值（°），≤此值=到达B点拐角    */
 #define TASK4_CRUISE_SPEED        10      /* 巡航速度（编码器单位）                  */
-#define TASK4_DECEL_STEPS         100U    /* 减速步数（100×20ms=2s 龟速停车）       */
-#define TASK4_PASS_TICKS          20U     /* 通过B点延时（20×20ms=400ms 车头已过）   */
+#define TASK4_DECEL_STEPS         35U     /* 减速步数（25×20ms=500ms 平滑减速）     */
+#define TASK4_PASS_TICKS          50U     /* 通过B点延时（50×20ms=1s，确保车尾过B） */
 
 static void Task_4(void)
 {
@@ -307,7 +307,8 @@ static void Task_4(void)
         Set_PID(&direction_pid,  0.50f, 0.15f, 0.010f);/* 循迹环 */
 
         /* ── 小球位置环：目标 X=0（始终控制）── */
-        Set_PID(&ball_pid_pos, -23.0f, -23.0f, -35.0f); Set_PID(&ball_pid_neg, -30.0f, -22.0f, -45.0f);
+        Set_PID(&ball_pid_pos, -20.0f, -23.0f, -35.0f);  /* 正目标侧：短力臂 */
+        Set_PID(&ball_pid_neg, -20.0f, -23.0f, -35.0f);  /* 负目标侧：长力臂，大kp+kd */
         BallPid_SetTarget(0.0f);
     }
 
@@ -373,14 +374,16 @@ static void Task_4(void)
 
     case STATE_PASS:
         /*
-         * 减速已完成（target=0），PID 自然把车停在 0 速。
-         * 不再调 API_Motor_SetSpeed —— 避免急断电抖动，小球无感。
+         * 直行通过 B 点：减速已完成（target=0），车靠惯性/低速
+         * 继续直行 TASK4_PASS_TICKS 帧，确保车尾完全通过 B 点。
+         * 期间不再循迹（已过弯道），仅维持小球控制。
          */
         s_pass_tick++;
 
         if (s_pass_tick >= TASK4_PASS_TICKS)
         {
-            /* 停车完成：仅复位循迹 PID，不硬切电机电源 */
+            /* 通过完成 → 停车 + 复位循迹 PID（小球 PID 不动） */
+            API_Motor_SetSpeed(0, 0);
             PID_Reset(&direction_pid);
             PID_Reset(&speed_loop.left);
             PID_Reset(&speed_loop.right);
@@ -389,7 +392,7 @@ static void Task_4(void)
         break;
 
     case STATE_DONE:
-        /* 小车已自然停下，小球位置环继续运行 */
+        /* 小车已停，小球位置环继续在 Ball_Move_Control() 中运行 */
         break;
     }
 }
@@ -452,7 +455,8 @@ static void Task_CruiseWithBall(float ball_target)
         Set_PID(&direction_pid, 0.50f, 0.15f, 0.010f);
 
         /* ── 小球位置环：目标由参数指定 ── */
-        Set_PID(&ball_pid_pos, -23.0f, -23.0f, -35.0f); Set_PID(&ball_pid_neg, -30.0f, -22.0f, -45.0f);
+        Set_PID(&ball_pid_pos, -20.0f, -23.0f, -35.0f);  /* 正目标侧：短力臂 */
+	    Set_PID(&ball_pid_neg, -20.0f, -23.0f, -35.0f);  /* 负目标侧：长力臂，大kp+kd */
         BallPid_SetTarget(ball_target);
     }
 

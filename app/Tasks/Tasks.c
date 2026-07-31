@@ -92,9 +92,9 @@ static void Task_2(void)
         s_start_tick = g_sys_tick_ms;
 
         /* 速度环 */
-        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 15.0f); /* 速度环 */
+        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 18.0f); /* 速度环 */
         /* 灰度方向环 */
-        Set_PID(&direction_pid,  0.40f, 0.42f, 0.005f);/* 循迹环 */
+        Set_PID(&direction_pid,  0.53f, 0.61f, 0.062f);/* 循迹环 */
     }
 
     switch (s_state)
@@ -108,16 +108,16 @@ static void Task_2(void)
         /* 起步冷却递减，防止起跑线被误判为终点 */
         if (s_cooldown > 0U) { s_cooldown--; }
         /* 冷却期过后才检测终点：sensor[2] 和 [5] 同时见黑 */
-        else if (g_graySensor.digital_bits[3] == 0U &&
-                 g_graySensor.digital_bits[4] == 0U &&
+        else if (g_graySensor.digital_bits[4] == 0U &&
                  g_graySensor.digital_bits[5] == 0U &&
-                 g_graySensor.digital_bits[6] == 0U )
+                 g_graySensor.digital_bits[6] == 0U &&
+                 g_graySensor.digital_bits[7] == 0U )
         {
             if (++s_confirm >= CONFIRM_CNT)
             {
                 /* 一圈完成：冻结局时 + 停车 + 复位 PID */
                 s_state = STATE_DONE;
-                Task_Stop(10);               /* 反向刹车防惯性滑动 */
+                Task_Stop(750);               /* 反向刹车防惯性滑动 */
             }
         }
         else { s_confirm = 0U; }
@@ -275,7 +275,7 @@ static void Task_3(void)
 /* ── 可调参数 ── */
 #define TASK4_START_COOLDOWN      150U    /* 起步冷却（150×20ms=3s，防起跑误触发） */
 #define TASK4_CORNER_YAW_DEG      -80.0f  /* 偏航角阈值（°），≤此值=到达B点拐角    */
-#define TASK4_CRUISE_SPEED        10      /* 巡航速度（编码器单位）                  */
+#define TASK4_CRUISE_SPEED        12      /* 巡航速度（编码器单位）                  */
 #define TASK4_DECEL_STEPS         35U     /* 减速步数（25×20ms=500ms 平滑减速）     */
 #define TASK4_PASS_TICKS          50U     /* 通过B点延时（50×20ms=1s，确保车尾过B） */
 

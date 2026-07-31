@@ -166,13 +166,6 @@ int main(void)
 			OLED_Printf(32, 16, OLED_6X8, "X:%+.1f", (double)CAM_X);  /* 摄像头X坐标 */
 			OLED_Printf(84, 16, OLED_6X8, "y:%.1f", g_icm42688.yaw); /* 偏航角 */
 
-			OLED_Printf(0, 32, OLED_6X8, "%c%.1f",
-			            (ball_pid_pos.Target >= 0) ? 'P' : 'N',
-			            (double)((ball_pid_pos.Target >= 0)
-			                ? ball_pid_pos.output : ball_pid_neg.output) * 0.000225); /* 活跃PID输出 */
-			OLED_Printf(64, 32, OLED_6X8, "%s",
-			            (((double)CAM_X > -1.0 && (double)CAM_X < 1.0) && (CAM_VALID > 0.5f)) ? "DB" : "  "); /* 死区标志 */
-
 			OLED_Printf(0, 48, OLED_6X8, "L%d R%d", Encoder1_Speed, Encoder2_Speed); /* 左右电机速度 */
 
 			// OLED_Printf(64, 0, OLED_6X8, "%d%d%d%d%d%d%d%d",

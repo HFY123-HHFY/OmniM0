@@ -24,6 +24,7 @@
 #include "usart.h"              /* API_USART_WriteByte */
 #include "Delay.h"              /* Delay_ms            */
 #include "Control_Task/Control_Task.h"  /* SysTick_GetMs */
+#include "LED.h"                /* LED_Control — 校准完成亮灯 */
 
 /*===========================================================================
  * 常量与配置
@@ -197,42 +198,82 @@ void Stepmotor_Init(void)
 }
 
 /*===========================================================================
- * Stepmotor_CalibrateOnce — 首次编码器校准 + 设零点（仅需执行一次！）
+ * Stepmotor_CalibrateOnce — 设零点（仅需执行一次！）
  *
- * ⚠️ 校准前电机必须空载（不装摆杆/云台/任何负载），否则编码器零点偏移，
- *    后续 GoHome 位置不可靠。
+ * 前提：驱动板已通过自带菜单完成编码器校准，此函数不再调用 Calibrate(0x06)。
  *
- * 流程：
- *   1. Stepmotor_Init → SelfTest → Enable
- *   2. Calibrate(30s) → 电机会自动旋转完成编码器对齐
- *   3. 此时需手动把电机拨到机械零点位置
- *   4. SetOrigin(存 Flash) → GoHome 验证
+ * 操作步骤：
+ *   1. 先断电，手动把电机拨到你想要的机械零点位置
+ *   2. 上电 → 自动 Enable → SetOrigin 存入 Flash → GoHome 验证 → LED2 常亮
+ *   3. 断电 → 注释掉此函数 → 恢复 BootInit → 重新烧录
  *
- * 校准完成 → GoHome 验证 → 死循环，用户重新注释掉此调用并烧录正常固件。
+ * LED 指示：
+ *   通信失败        → 灯全灭（检查接线/驱动板供电）
+ *   SetOrigin 失败  → LED1 慢闪（2s 周期）
+ *   GoHome 验证失败 → LED1+LED2 交替闪
+ *   ★ 全部完成     → LED2 常亮
  *===========================================================================*/
 void Stepmotor_CalibrateOnce(void)
 {
-    /* 等驱动板上线 */
-    if (Stepmotor_SelfTest(STEPMOTOR1) != MOTOR_OK) { while (1); }
-    if (Stepmotor_Enable(STEPMOTOR1) != MOTOR_OK)   { while (1); }
+    MotorErrCode e;
 
-    /* 编码器校准（电机会自动旋转数秒，最多等 30s） */
-    Stepmotor_Calibrate(STEPMOTOR1, 30000U);
+    /* ── ① 清理环形缓冲 ── */
+    Stepmotor_Init();
+
+    /* ── ② 等驱动板上线（失败 → 卡死，灯全灭）── */
+    if (Stepmotor_SelfTest(STEPMOTOR1) != MOTOR_OK) { while (1); }
+    if (Stepmotor_Enable(STEPMOTOR1)   != MOTOR_OK) { while (1); }
 
     /*
-     * 此时电机已停转。手动把电机拨到你想要的机械零点位置，
-     * 拨好后再按复位键或重新上电。
+     * ── ③ 保存当前机械位置为零点（存入 Flash）──
      *
-     * ⚠️ 还没拨到零点？现在做！
+     * ★ 上电前你已经手动把电机拨到了想要的零点位置。
+     *    这里直接保存，不调 Calibrate（驱动板已自带编码器校准）。
+     *    失败自动重试 3 次，每次间隔 2s。
      */
+    {
+        uint8_t retry;
+        for (retry = 0U; retry < 3U; retry++)
+        {
+            e = Stepmotor_SetOrigin(STEPMOTOR1, 1U);
+            if (e == MOTOR_OK) break;
+            Delay_ms(2000);
+        }
+    }
 
-    /* 将当前位置保存为回零原点（存入 Flash，掉电不丢失） */
-    Stepmotor_SetOrigin(STEPMOTOR1, 1U);
+    if (e != MOTOR_OK)
+    {
+        /* SetOrigin 3 次都失败 → LED1 慢闪 */
+        while (1)
+        {
+            LED_Control(LED1, LED_HIGH); Delay_ms(1000);
+            LED_Control(LED1, LED_LOW);  Delay_ms(1000);
+        }
+    }
 
-    /* 验证回零：电机应自动转回刚设的零点 */
-    Stepmotor_GoHome(STEPMOTOR1, 10000U);
+    /* ── ④ 等 Flash 写入完成 ── */
+    Delay_ms(1000);
 
-    /* 校准完成，卡在这里等用户重新注释此调用并烧录正常固件 */
+    /* ── ⑤ 验证回零（失败 → LED1+LED2 交替闪）── */
+    e = Stepmotor_GoHome(STEPMOTOR1, 10000U);
+    if (e != MOTOR_OK)
+    {
+        while (1)
+        {
+            LED_Control(LED1, LED_HIGH); LED_Control(LED2, LED_LOW);
+            Delay_ms(500);
+            LED_Control(LED1, LED_LOW);  LED_Control(LED2, LED_HIGH);
+            Delay_ms(500);
+        }
+    }
+
+    /*
+     * ── ⑥ ★ 全部完成，LED2 常亮 ──
+     * 断电 → 注释掉此函数 → 恢复 BootInit → 重新烧录。
+     */
+    LED_Control(LED1, LED_LOW);
+    LED_Control(LED2, LED_HIGH);
+
     while (1);
 }
 

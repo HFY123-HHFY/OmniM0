@@ -97,7 +97,13 @@ int main(void)
 	 * ══════════════════════════════════════════════════════════════════ */
 	API_TIM_Init(API_TIM1, 1U);
 
-	// Stepmotor_CalibrateOnce();          /* ★ 首次校准：仅跑一次，跑完立刻注释！ */
+	/* 
+	* ★ 首次校准：仅跑一次，跑完立刻注释！
+	* 操作流程
+	* 注释掉 BootInit，取消注释 CalibrateOnce，烧录
+	* 上电 → 等电机自动旋转校准完成 → 等 6 秒 → LED2 亮
+	* 看到 LED2 亮了 → 断电 → 注释 CalibrateOnce，恢复 BootInit → 重新烧录 */
+	// Stepmotor_CalibrateOnce();
 
 	Stepmotor_BootInit(); /* 驱动板 5s 内未上线 — 检查接线/供电/波特率后复位 */
 	Stepmotor_ConfigMove(120.0f, 30.0f);   // 120RPM，30档加速（匹配小球惯性，防过冲）

@@ -170,8 +170,8 @@ static void Task_3(void)
 
         PID_Reset(&ball_pid_pos);
         PID_Reset(&ball_pid_neg);
-        Set_PID(&ball_pid_pos, -9.0f, -20.0f, -35.0f);  /* 正目标侧：短力臂 */
-        Set_PID(&ball_pid_neg, -9.0f, -30.0f, -35.0f);  /* 负目标侧：长力臂，大kp+kd */
+        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -45.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_neg, -10.0f, -40.0f, -55.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
         BallPid_SetTarget(5.0f);         /* 第一阶段：X = +5.0 */
     }
 
@@ -191,6 +191,7 @@ static void Task_3(void)
                     {
                         s_confirm_cnt = 0U;
                         s_state       = PHASE_CONFIRM_P5;
+                        LED_Control(LED1, LED_HIGH);   /* 到达+5，亮灯 */
                     }
                 }
                 else { s_confirm_cnt = 0U; }
@@ -226,6 +227,7 @@ static void Task_3(void)
                     {
                         s_confirm_cnt = 0U;
                         s_state       = PHASE_CONFIRM_N5;
+                        LED_Control(LED1, LED_LOW);    /* 到达-5，灭灯 */
                     }
                 }
                 else { s_confirm_cnt = 0U; }
@@ -307,8 +309,8 @@ static void Task_4(void)
         Set_PID(&direction_pid,  0.40f, 0.08f, 0.010f);/* 循迹环 */
 
         /* ── 小球位置环：目标 X=0（始终控制）── */
-        Set_PID(&ball_pid_pos, -20.0f, -23.0f, -35.0f);  /* 正目标侧：短力臂 */
-        Set_PID(&ball_pid_neg, -20.0f, -23.0f, -35.0f);  /* 负目标侧：长力臂，大kp+kd */
+        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -45.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_neg, -20.0f, -40.0f, -55.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
         BallPid_SetTarget(0.0f);
     }
 
@@ -455,8 +457,8 @@ static void Task_CruiseWithBall(float ball_target)
         Set_PID(&direction_pid, 0.50f, 0.15f, 0.010f);
 
         /* ── 小球位置环：目标由参数指定 ── */
-        Set_PID(&ball_pid_pos, -20.0f, -23.0f, -35.0f);  /* 正目标侧：短力臂 */
-	    Set_PID(&ball_pid_neg, -20.0f, -23.0f, -35.0f);  /* 负目标侧：长力臂，大kp+kd */
+        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -45.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_neg, -20.0f, -40.0f, -55.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
         BallPid_SetTarget(ball_target);
     }
 

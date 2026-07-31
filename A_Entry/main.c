@@ -104,14 +104,14 @@ int main(void)
 	// Stepmotor_CalibrateOnce();
 
 	Stepmotor_BootInit(); /* 驱动板 5s 内未上线 — 检查接线/供电/波特率后复位 */
-	Stepmotor_ConfigMove(120.0f, 30.0f);   // 120RPM，30档加速（匹配小球惯性，防过冲）
+	Stepmotor_ConfigMove(1000.0f, 1000.0f);  // 800RPM中等偏上，加速0xFE满档秒到
 
 	// PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 20.0f); /* 速度环 */
 	// Set_PID(&direction_pid,  0.40f, 0.08f, 0.010f); /* 循迹环：降kp防振荡, 降ki缓积 */
 	// YawPid_Set(2.0f, 0.3f, 0.0f, 45.0f); /* 偏航环 */
-	// Set_PID(&ball_pid_pos, -8.0f, -20.0f, -35.0f);  /* 正目标侧：短力臂 */
-	// Set_PID(&ball_pid_neg, -8.0f, -20.0f, -35.0f);  /* 负目标侧：长力臂，大kp+kd */
-	// BallPid_SetTarget(5.0f);                      /* 目标 X（同时设 pos/neg） */
+	// Set_PID(&ball_pid_pos, -20.0f, -30.0f, -45.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+	// Set_PID(&ball_pid_neg, -20.0f, -30.0f, -45.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+	// BallPid_SetTarget(-5.0f);                      /* 目标 X（同时设 pos/neg） */
 
 	Buzzer_Beep(100);
 

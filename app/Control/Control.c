@@ -345,6 +345,10 @@ void Ball_Move_Control(void)
 
     float angle = (float)p->output * BALL_MOTOR_DEG_PER_OUTPUT;
 
+    /* ── 输出限幅，防过冲振荡 ── */
+    if (angle > BALL_ANGLE_MAX)  angle = BALL_ANGLE_MAX;
+    if (angle < BALL_ANGLE_MIN)  angle = BALL_ANGLE_MIN;
+
     Stepmotor_SetAngle(STEPMOTOR1, angle);
 }
 

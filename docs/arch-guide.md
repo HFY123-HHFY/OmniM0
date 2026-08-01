@@ -102,38 +102,32 @@ ISR 中直接执行时序敏感的控制任务：
 
 | 优先级 | 外设 | 说明 |
 |:---:|------|------|
-| 0 | TIMG0 | 系统时基 1ms（ISR 直接执行所有控制任务） |
-| 2 | Encoder EXTI / USART2 | 编码器脉冲边沿捕获 / JY61P 陀螺仪 RX |
-| 3 | USART1/3/4 + MPU6050 + 缺省 | 调试串口与辅助外设 |
+| 0 | TIMG0 | 系统时基 1ms（ISR 调度核心，不可抢占） |
+| 1 | Encoder EXTI / USART4 | 编码器脉冲边沿捕获 / 摄像头数据通信 |
+| 2 | USART2 | 步进电机 Emm42 通信 |
+| 3 | USART1/3 + MPU6050 + 缺省 | 调试串口 / 未启用外设 |
 
-编码器 EXTI 优先级统一在 `SYSTEM/IrqPriority.h` 中管理（`IRQ_PRIO_ENCODER_EXTI 2U`）。
+编码器 EXTI 优先级统一在 `SYSTEM/IrqPriority.h` 中管理（`IRQ_PRIO_ENCODER_EXTI 1U`）。
 
-### 4.6 ICM42688 数据流架构（当前主力 IMU，ISR 内驱动）
+### 4.6 ICM42688 数据流架构（当前主力 IMU）
 
-ICM42688 为当前主力 IMU（JY61P 保留备用）。数据流：
+ICM42688 为当前主力 IMU（JY61P 保留备用）。数据按需通过 `ICM42688_GetSnapshot()` 读取：
 
 ```text
-┌─ TIMG0 ISR 5ms 插槽（优先级 0）─────────────────────┐
-│  ICM42688_ReadSensor()                               │
-│    → soft_spi_hal_save()  保存 SPI 上下文（防 OLED 冲突）│
-│    → API_SPI_SelectBus(SPI2)                         │
-│    → BurstRead 12 字节（ACCEL_X1→GYRO_Z0）           │  ← SPI2, 5MHz DelayOff
-│    → float 转换 + atan2f/sqrtf + 偏航积分              │
-│    → soft_spi_hal_restore() 恢复 SPI 上下文            │
-│    → 写入 g_icm42688 全局缓存                          │
+┌─ 主循环 / Task_Run（20ms ISR 插槽）─────────────────┐
+│  ICM42688_GetSnapshot(&snap) → snap.yaw / roll / pitch│
+│    → 双缓冲原子读，零 SPI 开销                         │
+│    → 数据由 ICM42688 后台 SPI 事务维护                 │
 └──────────────────────────────────────────────────────┘
                     ↓
-┌─ TIMG0 ISR 20ms 插槽（优先级 0）────────────────────┐
-│  YawPid_Calc(yaw_degrees) → 整数 PID                │  ← Q16.16，无浮点
-│  或 Drive_YawSpeed() → 速度环 + 偏航角环融合输出       │
-└──────────────────────────────────────────────────────┘
+  YawPid_Calc(snap.yaw) → 整数 PID（Q16.16）
+  或 Drive_YawSpeed() → 速度环 + 偏航角环融合输出
 ```
 
 设计原则：
-- ICM42688_ReadSensor 在 ISR 5ms 中完成 SPI 读取和浮点转换，数据年龄 ≤5ms。
-- BurstRead 内部使用 `soft_spi_hal_save/restore` 保护 SPI 上下文，
+- ICM42688 通过 SPI 上下文保护（`soft_spi_hal_save/restore`）安全访问，
   即使主循环正在做 OLED SPI 刷新也不会冲突。
-- 主循环 / 控制代码通过 `g_icm42688` 全局结构体或 `ICM42688_GetSnapshot()` 原子快照读取数据，零 SPI。
+- 控制代码通过 `ICM42688_GetSnapshot()` 原子快照读取数据，零额外 SPI。
 - 偏航积分基于 `g_sys_tick_ms` 自动计算 dt，首次自动归零。
 
 ### 4.7 非阻塞延时
@@ -246,12 +240,16 @@ TIMG0 20ms → SnapshotAll() → raw→stable, raw=0
 | LED | BSP/LED/ | GPIO | 已实现 |
 | KEY | BSP/KEY/ | GPIO（消抖，4 键协议） | 已实现 |
 | OLED | BSP/OLED/ | SPI（软，SPI1） | 已实现 |
-| MPU6050 | BSP/MPU6050/ | I2C + EXTI（DMP） | 已实现（预留） |
-| **ICM42688** | BSP/ICM42688/ | SPI2（软, 5MHz） | **已实现（ISR 驱动 + SPI 上下文保护）** |
+| **StepMotor** | BSP/StepMotor/ | UART（USART2, 115200） | **已实现（Emm42 V5.0 闭环驱动）** |
+| **ICM42688** | BSP/ICM42688/ | SPI2（软, 5MHz） | **已实现（SPI 上下文保护）** |
 | **A4950** | BSP/A4950/ | 4 路独立 PWM（快衰减） | **已实现** |
 | **GrayADC** | BSP/gray_adc/ | ADC + GPIO（74HC4051） | 已实现 |
-| **JY61P** | BSP/JY61P/ | UART（USART2, 115200 bps） | 保留备用 |
+| MPU6050 | BSP/MPU6050/ | I2C + EXTI（DMP） | 已实现（预留） |
+| JY61P | BSP/JY61P/ | UART | 保留备用 |
 | TB6612 | BSP/TB6612/ | PWM + GPIO | 底层保留，注册层已删除 |
+| BMP280 | BSP/BMP280/ | I2C | 未启用 |
+| QMC5883P | BSP/QMC5883P/ | I2C | 未启用 |
+| NRF24L01 | BSP/NRF24L01/ | SPI | 未启用 |
 
 ### 6.1 GrayADC — 8 路灰度传感器
 
@@ -361,15 +359,21 @@ right = speed_out_right - yaw_steer;
 | 按键 | 功能 | 描述 |
 |:---:|------|------|
 | **KEY1** | 启动 | 待机时按下 → 锁存当前选中任务号 → 启动 |
-| **KEY2** | 选择任务 | 循环切换 `s_task_select` 1→2→3→4→1（由 KEY.c 维护） |
-| **KEY3** | 急停 | 运行中按下 → `Task_Stop()`：停车 + 全部 4 个 PID 清零 |
-| **KEY4** | 保留 | 暂无功能 |
+| **KEY2** | 选择任务 | 循环切换 `s_task_select` 1→2→3→4→5→6→1（由 KEY.c 维护） |
+| **KEY3** | 急停 | 运行中按下 → `Task_Stop()`：停车 + 全部 PID 清零 |
+| **KEY4** | 设参 | 循环选择 Task_6 小球目标坐标 -12→+12→-12 |
 
 - 启动瞬间锁存 `s_task_select` → `s_task_active`，运行中 KEY2 不影响当前任务
 - `Task_Stop()` 复位：速度环×2 + 方向环 + 偏航角环共 4 个 PID
-- 任务实现（`Task_1/2/3/4`）当前为空壳，待开发
+- 任务实现：
+  - `Task_1` — 空壳，预留
+  - `Task_2` — 灰度循迹一圈并计时（速度环 + 方向环）
+  - `Task_3` — 小球位置控制 0→+5→-5（纯步进电机，不涉及小车）
+  - `Task_4` — 灰度循迹 + 小球 X=0（软启动 + 计时触发极缓减速）
+  - `Task_5` — 循迹一圈 + 小球 X=0（软启动 + 终点检测 + 极缓减速）
+  - `Task_6` — 循迹一圈 + 小球指定坐标（软启动 + 终点检测 + 极缓减速，KEY4 设参）
 
-辅助接口：`Task_IsRunning()` / `Task_GetSelect()` / `Task_GetActive()` / `Task_GetPos()`
+辅助接口：`Task_IsRunning()` / `Task_GetSelect()` / `Task_GetActive()` / `Task_GetPos()` / `Task_2_GetLapTime()`
 
 ### 7.3 任务调度（Control_Task）
 
@@ -377,16 +381,14 @@ right = speed_out_right - yaw_steer;
 
 | 周期 | 任务 | 执行位置 |
 |------|------|:---:|
-| 1ms | g_sys_tick_ms++, Key_Tick（内部 10 分频，30ms 消抖窗口） | ISR |
-| 5ms | ICM42688_ReadSensor + GrayADC_Task + 出入线检测 + Direction_Control | ISR |
-| 20ms | Encoder SnapshotAll + GetFilteredSpeed + 控制输出 / Task_Run | ISR |
+| 1ms | g_sys_tick_ms++, Key_Tick | ISR |
+| 5ms | GrayADC_Task + Direction_Control + 帧超时检测 | ISR |
+| 20ms | Encoder SnapshotAll + GetFilteredSpeed + Task_Run | ISR |
 | 50ms | usart_printf（标志位驱动） | 主循环 |
 | 100ms | OLED 刷新（标志位驱动） | 主循环 |
 
 **TaskManager** 仅管理主循环低频任务（`buzzer_5ms` / `key_20ms` / `print_50ms` / `oled_100ms`），在 ISR 中计数+置标志位，主循环轮询消费。
 
-ISR 5ms 槽耗时 ~185µs（占 3.7% CPU）：GrayADC(40μs) + ICM42688(120μs) + Direction_PID(15μs)。
-ICM42688_ReadSensor 含 SPI 上下文保护（save/restore ~几 µs），数据年龄 ≤5ms。
 
 ### 7.4 PID 库
 
@@ -465,8 +467,9 @@ cmake --build --preset Debug
 8. SYSTEM/IrqPriority.h
 9. BSP/ICM42688/ICM42688.h
 10. BSP/A4950/A4950.h
-11. app/Control/Control.h（三环 PID 对象与接口）
-12. app/Control/Control.c（三环 PID 默认参数）
-13. app/Tasks/Tasks.h（任务框架 + KEY 协议）
-14. API/inc/Encoder.h（编码器 EMA 滤波接口）
-15. API/API_SPI/soft_spi_hal.h（SPI 上下文保护接口）
+11. BSP/StepMotor/StepMotor.h（Emm42 V5.0 步进闭环驱动）
+12. app/Control/Control.h（三环 PID + 小球位置环接口）
+13. app/Control/Control.c（三环 PID 默认参数）
+14. app/Tasks/Tasks.h（任务框架 + KEY 协议）
+15. API/inc/Encoder.h（编码器 EMA 滤波接口）
+16. API/API_SPI/soft_spi_hal.h（SPI 上下文保护接口）

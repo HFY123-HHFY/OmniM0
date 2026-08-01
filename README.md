@@ -17,7 +17,7 @@ OmniM0 = **OmniLayer 架构 × 电赛M0+内核 控制场景**，目标是把工�
 - ⚙️ **单平台收敛** — 工程已切换为 G3507-only，减少无效分支维护成本
 - 🧩 **注册层（Enroll）** — X-Macro 编译期映射，统一资源注册入口
 - 🚌 **软件总线** — I2C/SPI 协议层与底层 GPIO 翻转分离，速率由 `BusRate.h` 集中配置
-- 🎯 **单一时基前后台** — 仅 TIMG0 一个定时器中断，ISR 直接执行全部控制任务（5ms 槽 ~185µs）
+- 🎯 **单一时基前后台** — 仅 TIMG0 一个定时器中断，ISR 执行传感器+控制+任务调度（5ms/20ms 分频）
 - 🌀 **双 IMU 冗余** — JY61P（UART 偏航角）+ ICM42688（SPI 六轴原始数据 + 偏航积分）
 - ⚡ **A4950 电机驱动** — 快衰减单极性 PWM，方向切换自动刹车死区
 - 🔢 **整数 Q16.16 PID** — ISR 热路径纯整数（< 2µs），浮点 API 保持调参体验
@@ -50,24 +50,24 @@ OmniM0 = **OmniLayer 架构 × 电赛M0+内核 控制场景**，目标是把工�
 OmniM0/
 ├─ A_Entry/                    # 程序入口 (main.c)
 ├─ app/                        # 应用层
-│  ├─ Control/                 # 循线控制 + 偏航角PID + 电机输出融合
-│  ├─ Control_Task/            # TIMG0 ISR 调度 + TaskManager + 非阻塞延时
-│  ├─ Tasks/                   # ★ 任务链：Task_1~4（KEY1 启动, KEY2 选择）
-│  ├─ Detect/                  # ★ 灰度入/离线检测器（互斥状态机）
-│  ├─ PID/                     # Q16.16 整数 PID + float API
+│  ├─ Control/                 # ★三环PID控制 + 小球位置环 + 电机输出融合
+│  ├─ Control_Task/            # ★TIMG0 ISR 调度 + TaskManager + 非阻塞延时
+│  ├─ Tasks/                   # ★ 任务链：Task_1~6（KEY1启动, KEY2选择, KEY4设参）
+│  ├─ PID/                     # ★Q16.16 整数 PID + float API
 │  ├─ Filter/                  # 滤波器
 │  └─ My_Usart/                # 串口 printf 重定向 + 数据包解析
 ├─ BSP/                        # 板级设备层
 │  ├─ LED/  KEY/  OLED/  Buzzer/
-│  ├─ MPU6050/                 # 六轴姿态（DMP 已启用，预留）
-│  ├─ ICM42688/                # ★ TDK 六轴陀螺仪（SPI2, 5MHz, ISR 驱动）
-│  ├─ A4950/                   # ★ 双路 H 桥电机驱动（4 路独立 PWM, 快衰减）
-│  ├─ JY61P/                   # ★ 维特智能六轴陀螺仪（UART 主动上报，USART2）
-│  ├─ gray_adc/                # ★ 8 路灰度传感器（74HC4051 模拟开关）
-│  ├─ TB6612/                  # 电机驱动（底层保留，已换用 A4950）
-│  ├─ BMP280/                  # 可选模块（按需启用）
-│  ├─ QMC5883P/                # 可选模块（按需启用）
-│  └─ NRF24L01/                # 可选模块（按需启用）
+│  ├─ StepMotor/               # ★ Emm42 V5.0 步进闭环电机（USART2, 115200）
+│  ├─ ICM42688/                # TDK 六轴陀螺仪（未启用 SPI2, 5MHz）
+│  ├─ A4950/                   # 双路 H 桥电机驱动（未启用 4 路独立 PWM, 快衰减）
+│  ├─ gray_adc/                # ★ 8 路红外传感器
+│  ├─ MPU6050/                 # 六轴姿态（未启用）
+│  ├─ JY61P/                   # 维特智能陀螺仪（未启用 UART 主动上报 ）
+│  ├─ TB6612/                  # ★ 电机驱动
+│  ├─ BMP280/                  # （未启用）
+│  ├─ QMC5883P/                # （未启用）
+│  └─ NRF24L01/                # （未启用）
 ├─ API/                        # 片内外设抽象层 + 协议层
 │  ├─ inc/ src/                # gpio/adc/pwm/tim/usart/exti/encoder
 │  ├─ API_I2C/                 # 软件 I2C 协议层
@@ -89,7 +89,7 @@ OmniM0/
 │  ├─ tasks.json               # VS Code 任务（F7编译 / F8烧录）
 │  └─ settings.json
 ├─ setup_env.bat               # ★ Windows 双击启动器
-├─ CMakeLists.txt
+├─ CMakeLists.txt              # ★ cmake 配置
 ├─ CMakePresets.json
 └─ gcc-arm-none-eabi.cmake
 ```
@@ -118,17 +118,19 @@ G3507_hw_config.h -> Enroll.c -> API/BSP Register -> 运行期按逻辑 ID 调�
 
 | 优先级 | 中断源 | 说明 |
 |:---:|------|------|
-| 0 | TIMG0 | 系统时基 1ms（ISR 执行：Key_Tick + JY61P + ICM42688 + 灰度 + 方向PID + 编码器 + 任务链） |
-| 2 | Encoder EXTI / USART2 | 编码器脉冲捕获 / JY61P 陀螺仪 RX |
-| 3 | USART1/3/4 + 缺省 | 调试串口、MPU6050 等 |
+| 0 | TIMG0 | 系统时基 1ms（ISR 调度核心，不可抢占） |
+| 1 | Encoder EXTI / USART4 | 编码器脉冲捕获 / 摄像头数据通信 |
+| 2 | USART2 | 步进电机 Emm42 通信 |
+| 3 | USART1/3 + MPU6050 + 缺省 | 板载调试 / 无线调试 / 未启用外设 |
 
 ### 🕹️ 按键映射
 
 | 按键 | 功能 |
 |:---:|------|
-| KEY1 | 任务启动/急停（toggle） |
-| KEY2 | 循环选择任务 1→2→3→4→1 |
-| KEY3 | 保留未使用 |
+| KEY1 | 任务启动（待机→锁存当前任务号并启动） |
+| KEY2 | 循环选择任务 1→2→3→4→5→6→1 |
+| KEY3 | 急停（运行中→停车+全部PID清零） |
+| KEY4 | Task_6 小球目标坐标循环 -12→+12→-12 |
 
 ## ⚙️ 构建与烧录
 

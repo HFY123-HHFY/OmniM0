@@ -290,7 +290,7 @@ static void ball_pid_init_one(PID_TypeDef *p)
     PID_Init(p);
     PID_Init_WithLimit(p, 500 * (int32_t)BALL_PID_SCALE, BALL_OUT_MAX);
     PID_SetSampleTime(p, 20);
-    PID_SetDeadband(p, (int32_t)(1.0f * BALL_PID_SCALE));  /* ±1.00 → ±100 */
+    PID_SetDeadband(p, (int32_t)(0.5f * BALL_PID_SCALE));  /* ±0.50 → ±50 */
 }
 
 void BallPid_Init(void)

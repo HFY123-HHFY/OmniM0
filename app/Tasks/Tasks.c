@@ -264,7 +264,7 @@ static void Task_3(void)
 
 /* ── Task_4 可调参数 ── */
 #define TASK4_KICK_ANGLE         10.0f  /* 起步补偿角度（°）                */
-#define TASK4_KICK_DELAY_TICKS   1U     /* 等车轮物理启动（1×20ms=20ms）    */
+#define TASK4_KICK_DELAY_TICKS   0.5f     /* 等车轮物理启动（1×20ms=20ms）  */
 #define TASK4_KICK_HOLD_TICKS    30U    /* 补偿保持（30×20ms=600ms）        */
 #define TASK4_CRUISE_TIME_TICKS  500U   /* 触发减速的全局计时（10s）         */
 #define TASK4_CRUISE_SPEED       14     /* 巡航速度（编码器单位）            */

@@ -164,8 +164,8 @@ static void Task_3(void)
 
         PID_Reset(&ball_pid_pos);
         PID_Reset(&ball_pid_neg);
-        Set_PID(&ball_pid_pos, -10.0f, -17.0f, -75.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
-        Set_PID(&ball_pid_neg, -13.0f, -30.0f, -115.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -45.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_neg, -10.0f, -40.0f, -55.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
         BallPid_SetTarget(5.0f);         /* 第一阶段：X = +5.0 */
     }
 
@@ -300,8 +300,8 @@ static void Task_4(void)
         Set_PID(&direction_pid,  0.40f, 0.08f, 0.010f);
 
         /* ── 小球位置环：目标 X=0（始终控制）── */
-        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -65.0f);
-        Set_PID(&ball_pid_neg, -5.0f, -30.0f, -95.0f);
+        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -45.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_neg, -20.0f, -40.0f, -55.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
         BallPid_SetTarget(0.0f);
     }
 
@@ -451,8 +451,8 @@ static void Task_CruiseWithBall(float ball_target)
         Set_PID(&direction_pid, 0.50f, 0.15f, 0.010f);
 
         /* ── 小球位置环 ── */
-        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -65.0f);
-        Set_PID(&ball_pid_neg, -5.0f, -30.0f, -95.0f);
+        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -45.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_neg, -20.0f, -40.0f, -55.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
         BallPid_SetTarget(ball_target);
     }
 

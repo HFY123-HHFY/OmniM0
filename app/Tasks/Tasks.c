@@ -263,24 +263,27 @@ static void Task_3(void)
  * ══════════════════════════════════════════════════════════════════════ */
 
 /* ── Task_4 可调参数 ── */
-#define TASK4_CRUISE_TIME_TICKS  500U  /* 触发减速的全局计时（10s）       */
-#define TASK4_CRUISE_SPEED       14    /* 巡航速度（编码器单位）          */
-#define TASK4_DECEL_STEPS        700U  /* 减速步数，越大停车越平滑        */
+#define TASK4_KICK_ANGLE         10.0f  /* 起步补偿角度（°），正负决定方向  */
+#define TASK4_KICK_HOLD_TICKS    60U    /* 补偿保持帧数（60×20ms=1.2s）     */
+#define TASK4_CRUISE_TIME_TICKS  500U   /* 触发减速的全局计时（10s）         */
+#define TASK4_CRUISE_SPEED       14     /* 巡航速度（编码器单位）            */
+#define TASK4_DECEL_STEPS        700U   /* 减速步数，越大停车越平滑          */
 
 static void Task_4(void)
 {
     /* ── 状态机 ── */
     enum {
-        STATE_CRUISE = 0U,     /* 全速巡航循迹，等计时到                     */
-        STATE_DECEL,           /* 极缓平滑减速，无时间压力                   */
-        STATE_DONE             /* 停车完成                                  */
+        STATE_CRUISE = 0U,     /* 全速巡航循迹，等计时到                   */
+        STATE_DECEL,           /* 极缓平滑减速，无时间压力                 */
+        STATE_DONE             /* 停车完成                                */
     };
 
     /* ── 静态变量（s_gen 感知 KEY1 重新启动）── */
     static uint8_t  s_state       = STATE_CRUISE;
     static uint8_t  s_last_gen    = 0U;
-    static uint16_t s_timer       = 0U;    /* 全局计时器（20ms/tick）        */
+    static uint16_t s_timer       = 0U;
     static uint16_t s_decel_step  = 0U;
+    static uint8_t  s_kick_cnt    = 0U;    /* 补偿剩余帧数，0=已完成        */
 
     /* ── 首次启动 / KEY1 重新启动 ── */
     if (s_last_gen != s_gen)
@@ -289,19 +292,26 @@ static void Task_4(void)
         s_state      = STATE_CRUISE;
         s_timer      = 0U;
         s_decel_step = 0U;
+        s_kick_cnt   = TASK4_KICK_HOLD_TICKS;
 
         /* ── 小车：直接巡航速度 ── */
         PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, TASK4_CRUISE_SPEED);
         Set_PID(&direction_pid,  0.40f, 0.08f, 0.010f);
 
-        /* ── 小球位置环：目标 X=0（始终控制）── */
+        /* ── 小球位置环：目标 X=0 ── */
         Set_PID(&ball_pid_pos, -20.0f, -30.0f, -45.0f);
         Set_PID(&ball_pid_neg, -20.0f, -40.0f, -55.0f);
         BallPid_SetTarget(0.0f);
     }
 
-    /* ── 小球位置控制 — 停车后释放，电机自保持 ── */
-    if (CAM_VALID > 0.5f && s_state != STATE_DONE)
+    /* ── 起步补偿：锁定绝对角度保持 N 帧，给小球足够的机械响应时间 ── */
+    if (s_kick_cnt > 0U)
+    {
+        s_kick_cnt--;
+        Stepmotor_SetAngle(STEPMOTOR1, TASK4_KICK_ANGLE);
+    }
+    /* ── 补偿结束后，PID 正常接管 ── */
+    else if (CAM_VALID > 0.5f && s_state != STATE_DONE)
     {
         Ball_Move_Control();
     }

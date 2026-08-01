@@ -568,11 +568,10 @@ static void Task_5(void)
                         TASK5_KICK_HOLD_TICKS);
 }
 
-
 /* ── Task_6 起步补偿参数（按目标象限分两套，独立调）── */
 #define TASK6_KICK_POS_ANGLE        10.0f  /* 目标 0~+12：起步补偿角度（°）       */
-#define TASK6_KICK_POS_DELAY_TICKS  10.0f   /* 目标 0~+12：等车轮物理启动（1×20ms=20ms）            */
-#define TASK6_KICK_POS_HOLD_TICKS   50U    /* 目标 0~+12：补偿保持（30×20ms=600ms）            */
+#define TASK6_KICK_POS_DELAY_TICKS  11.0f  /* 目标 0~+12：等车轮物理启动（1×20ms=20ms）            */
+#define TASK6_KICK_POS_HOLD_TICKS   40U    /* 目标 0~+12：补偿保持（30×20ms=600ms）            */
 
 #define TASK6_KICK_NEG_ANGLE        10.0f  /* 目标 -12~0：起步补偿角度（°）      */
 #define TASK6_KICK_NEG_DELAY_TICKS  10.0f  /* 目标 -12~0：等车轮物理启动（10×20ms=200ms）            */

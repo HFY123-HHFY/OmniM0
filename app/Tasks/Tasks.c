@@ -254,17 +254,15 @@ static void Task_3(void)
  * Task_4 — 双系统协同：灰度循迹 + 小球位置控制
  *
  * 时间线（从 KEY1 按下开始，20ms/tick）：
- *   [0~1.5s]  软启动：速度从 0 线性缓升到巡航速度
- *   [1.5s~]   全速巡航 + 灰度循迹
- *   [触发]    极缓平滑减速至零，无时间限制，停车无感
+ *   [0~]      全速巡航 + 灰度循迹
+ *   [计时到]  极缓平滑减速至零，无时间限制，停车无感
  *
- * 小车控制：软启动 → 巡航循迹 → 极缓减速停车。
+ * 小车控制：直接巡航循迹 → 计时触发极缓减速停车。
  *
  * 调用频率：TIMG0 ISR 20ms（由 Task_Run 分发）。
  * ══════════════════════════════════════════════════════════════════════ */
 
 /* ── Task_4 可调参数 ── */
-#define TASK4_SOFT_START_STEPS   0U   /* 软启动步数，越小越快达巡航      */
 #define TASK4_CRUISE_TIME_TICKS  500U  /* 触发减速的全局计时（10s）       */
 #define TASK4_CRUISE_SPEED       14    /* 巡航速度（编码器单位）          */
 #define TASK4_DECEL_STEPS        700U  /* 减速步数，越大停车越平滑        */
@@ -273,81 +271,48 @@ static void Task_4(void)
 {
     /* ── 状态机 ── */
     enum {
-        STATE_SOFT_START = 0U, /* 软启动：速度 0 → CRUISE_SPEED             */
-        STATE_CRUISE,          /* 全速巡航循迹，等计时到                     */
+        STATE_CRUISE = 0U,     /* 全速巡航循迹，等计时到                     */
         STATE_DECEL,           /* 极缓平滑减速，无时间压力                   */
         STATE_DONE             /* 停车完成                                  */
     };
 
     /* ── 静态变量（s_gen 感知 KEY1 重新启动）── */
-    static uint8_t  s_state       = STATE_SOFT_START;
+    static uint8_t  s_state       = STATE_CRUISE;
     static uint8_t  s_last_gen    = 0U;
     static uint16_t s_timer       = 0U;    /* 全局计时器（20ms/tick）        */
-    static uint16_t s_ramp_step   = 0U;
     static uint16_t s_decel_step  = 0U;
 
     /* ── 首次启动 / KEY1 重新启动 ── */
     if (s_last_gen != s_gen)
     {
         s_last_gen   = s_gen;
-        s_state      = STATE_SOFT_START;
+        s_state      = STATE_CRUISE;
         s_timer      = 0U;
-        s_ramp_step  = 0U;
         s_decel_step = 0U;
 
-        /* ── 小车：初始速度=0，软启动阶段再缓升 ── */
-        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 0);
+        /* ── 小车：直接巡航速度 ── */
+        PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, TASK4_CRUISE_SPEED);
         Set_PID(&direction_pid,  0.40f, 0.08f, 0.010f);
 
         /* ── 小球位置环：目标 X=0（始终控制）── */
-        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -45.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
-        Set_PID(&ball_pid_neg, -20.0f, -40.0f, -55.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -45.0f);
+        Set_PID(&ball_pid_neg, -20.0f, -40.0f, -55.0f);
         BallPid_SetTarget(0.0f);
     }
 
-    /* ════════════════════════════════════════════════════════════════
-     * 小球位置控制 — 停车后释放，电机自保持。
-     * ════════════════════════════════════════════════════════════════ */
+    /* ── 小球位置控制 — 停车后释放，电机自保持 ── */
     if (CAM_VALID > 0.5f && s_state != STATE_DONE)
     {
         Ball_Move_Control();
     }
 
-    /* ── 全局计时器：从 KEY1 按下开始，每 20ms +1 ── */
+    /* ── 全局计时器：每 20ms +1 ── */
     s_timer++;
 
-    /* ════════════════════════════════════════════════════════════════
-     * 小车状态机
-     * ════════════════════════════════════════════════════════════════ */
+    /* ── 小车状态机 ── */
     switch (s_state)
     {
-    case STATE_SOFT_START:
-    {
-        /*
-         * 软启动：速度从 0 线性缓升到 CRUISE_SPEED。
-         * 缓升防止起步惯性导致小球位置突变。
-         */
-        int32_t target = (int32_t)((uint32_t)s_ramp_step * (uint32_t)TASK4_CRUISE_SPEED
-                                   / TASK4_SOFT_START_STEPS);
-        if (target > TASK4_CRUISE_SPEED) { target = TASK4_CRUISE_SPEED; }
-
-        PID_SetTarget(&speed_loop.left,  target);
-        PID_SetTarget(&speed_loop.right, target);
-        LineFollow_Output();
-
-        s_ramp_step++;
-        if (s_ramp_step >= TASK4_SOFT_START_STEPS)
-        {
-            /* 软启动完成 → 锁定巡航速度，进入全速巡航 */
-            PID_SetTarget(&speed_loop.left,  TASK4_CRUISE_SPEED);
-            PID_SetTarget(&speed_loop.right, TASK4_CRUISE_SPEED);
-            s_state = STATE_CRUISE;
-        }
-        break;
-    }
-
     case STATE_CRUISE:
-        /* 全速巡航 + 灰度循迹，等计时到 */
         LineFollow_Output();
 
         if (s_timer >= TASK4_CRUISE_TIME_TICKS)
@@ -359,10 +324,6 @@ static void Task_4(void)
 
     case STATE_DECEL:
     {
-        /*
-         * 极缓平滑减速：线性降速，750 步 × 20ms = 15 秒从巡航到零。
-         * 速度环 PID 自然跟踪极缓慢下降的目标，停车无感。
-         */
         int32_t target = TASK4_CRUISE_SPEED
                        - (int32_t)((uint32_t)s_decel_step * (uint32_t)TASK4_CRUISE_SPEED
                                    / TASK4_DECEL_STEPS);
@@ -385,7 +346,6 @@ static void Task_4(void)
     }
 
     case STATE_DONE:
-        /* 小车已停，小球位置环继续在 Ball_Move_Control() 中运行 */
         break;
     }
 }

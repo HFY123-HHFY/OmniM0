@@ -164,8 +164,8 @@ static void Task_3(void)
 
         PID_Reset(&ball_pid_pos);
         PID_Reset(&ball_pid_neg);
-        Set_PID(&ball_pid_pos, -20.0f, -30.0f, -65.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
-        Set_PID(&ball_pid_neg, -5.0f, -30.0f, -95.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_pos, -10.0f, -17.0f, -75.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
+        Set_PID(&ball_pid_neg, -13.0f, -30.0f, -115.0f);  /* 600RPM快响应：降P减I，重D阻尼 */
         BallPid_SetTarget(5.0f);         /* 第一阶段：X = +5.0 */
     }
 
@@ -264,7 +264,7 @@ static void Task_3(void)
  * ══════════════════════════════════════════════════════════════════════ */
 
 /* ── Task_4 可调参数 ── */
-#define TASK4_SOFT_START_STEPS   40U   /* 软启动步数，越小越快达巡航      */
+#define TASK4_SOFT_START_STEPS   0U   /* 软启动步数，越小越快达巡航      */
 #define TASK4_CRUISE_TIME_TICKS  500U  /* 触发减速的全局计时（10s）       */
 #define TASK4_CRUISE_SPEED       14    /* 巡航速度（编码器单位）          */
 #define TASK4_DECEL_STEPS        700U  /* 减速步数，越大停车越平滑        */

@@ -263,8 +263,9 @@ static void Task_3(void)
  * ══════════════════════════════════════════════════════════════════════ */
 
 /* ── Task_4 可调参数 ── */
-#define TASK4_KICK_ANGLE         10.0f  /* 起步补偿角度（°），正负决定方向  */
-#define TASK4_KICK_HOLD_TICKS    60U    /* 补偿保持帧数（60×20ms=1.2s）     */
+#define TASK4_KICK_ANGLE         10.0f  /* 起步补偿角度（°）                */
+#define TASK4_KICK_DELAY_TICKS   1U     /* 等车轮物理启动（1×20ms=20ms）    */
+#define TASK4_KICK_HOLD_TICKS    30U    /* 补偿保持（30×20ms=600ms）        */
 #define TASK4_CRUISE_TIME_TICKS  500U   /* 触发减速的全局计时（10s）         */
 #define TASK4_CRUISE_SPEED       14     /* 巡航速度（编码器单位）            */
 #define TASK4_DECEL_STEPS        700U   /* 减速步数，越大停车越平滑          */
@@ -292,7 +293,7 @@ static void Task_4(void)
         s_state      = STATE_CRUISE;
         s_timer      = 0U;
         s_decel_step = 0U;
-        s_kick_cnt   = TASK4_KICK_HOLD_TICKS;
+        s_kick_cnt   = TASK4_KICK_DELAY_TICKS + TASK4_KICK_HOLD_TICKS;
 
         /* ── 小车：直接巡航速度 ── */
         PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, TASK4_CRUISE_SPEED);
@@ -304,13 +305,17 @@ static void Task_4(void)
         BallPid_SetTarget(0.0f);
     }
 
-    /* ── 起步补偿：锁定绝对角度保持 N 帧，给小球足够的机械响应时间 ── */
+    /* ── 起步补偿：延迟等车轮物理启动 → kick → PID 接管 ── */
     if (s_kick_cnt > 0U)
     {
         s_kick_cnt--;
-        Stepmotor_SetAngle(STEPMOTOR1, TASK4_KICK_ANGLE);
+        /* cnt >= HOLD → 延迟阶段（等车轮克服静摩擦）     */
+        /* cnt <  HOLD → kick 阶段（和车轮同步发力）      */
+        if (s_kick_cnt < TASK4_KICK_HOLD_TICKS)
+        {
+            Stepmotor_SetAngle(STEPMOTOR1, TASK4_KICK_ANGLE);
+        }
     }
-    /* ── 补偿结束后，PID 正常接管 ── */
     else if (CAM_VALID > 0.5f && s_state != STATE_DONE)
     {
         Ball_Move_Control();
@@ -378,12 +383,15 @@ static void Task_4(void)
  * ══════════════════════════════════════════════════════════════════════ */
 
 /* ── Task_5/6 可调参数（共用）── */
-#define TASK_CB_SOFT_START_STEPS  40U   /* 软启动步数，越小越快达巡航        */
-#define TASK_CB_CRUISE_SPEED      13    /* 巡航速度（编码器单位）            */
-#define TASK_CB_START_COOLDOWN    250U  /* 起步冷却，防起跑线误判终点（5s）  */
-#define TASK_CB_CONFIRM_CNT       0U    /* 终点消抖次数（0=立即触发）        */
-#define TASK_CB_POST_LAP_TICKS    200U  /* 回A点后继续巡航计时（4s）         */
-#define TASK_CB_DECEL_STEPS       700U  /* 减速步数，越大停车越平滑（14s）   */
+#define TASK_CB_KICK_ANGLE        10.0f  /* 起步补偿角度（°）                */
+#define TASK_CB_KICK_DELAY_TICKS  1U     /* 等车轮物理启动（1×20ms=20ms）    */
+#define TASK_CB_KICK_HOLD_TICKS   30U    /* 补偿保持（30×20ms=600ms）        */
+#define TASK_CB_SOFT_START_STEPS  40U    /* 软启动步数，越小越快达巡航        */
+#define TASK_CB_CRUISE_SPEED      13     /* 巡航速度（编码器单位）            */
+#define TASK_CB_START_COOLDOWN    250U   /* 起步冷却，防起跑线误判终点（5s）  */
+#define TASK_CB_CONFIRM_CNT       0U     /* 终点消抖次数（0=立即触发）        */
+#define TASK_CB_POST_LAP_TICKS    200U   /* 回A点后继续巡航计时（4s）         */
+#define TASK_CB_DECEL_STEPS       700U   /* 减速步数，越大停车越平滑（14s）   */
 
 static void Task_CruiseWithBall(float ball_target)
 {
@@ -404,6 +412,7 @@ static void Task_CruiseWithBall(float ball_target)
     static uint16_t s_decel_step  = 0U;
     static uint8_t  s_cooldown    = 0U;
     static uint8_t  s_confirm     = 0U;
+    static uint8_t  s_kick_cnt    = 0U;    /* 起步补偿剩余帧数              */
 
     /* ── 首次启动 / KEY1 重新启动 ── */
     if (s_last_gen != s_gen)
@@ -415,6 +424,7 @@ static void Task_CruiseWithBall(float ball_target)
         s_decel_step = 0U;
         s_cooldown   = (uint8_t)TASK_CB_START_COOLDOWN;
         s_confirm    = 0U;
+        s_kick_cnt   = TASK_CB_KICK_DELAY_TICKS + TASK_CB_KICK_HOLD_TICKS;
 
         /* ── 小车：初始速度=0，软启动缓升 ── */
         PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 0);
@@ -426,8 +436,16 @@ static void Task_CruiseWithBall(float ball_target)
         BallPid_SetTarget(ball_target);
     }
 
-    /* ── 小球位置控制 — 停车后释放，电机自保持 ── */
-    if (CAM_VALID > 0.5f && s_state != STATE_DONE)
+    /* ── 起步补偿：延迟等车轮物理启动 → kick → PID 接管 ── */
+    if (s_kick_cnt > 0U)
+    {
+        s_kick_cnt--;
+        if (s_kick_cnt < TASK_CB_KICK_HOLD_TICKS)
+        {
+            Stepmotor_SetAngle(STEPMOTOR1, TASK_CB_KICK_ANGLE);
+        }
+    }
+    else if (CAM_VALID > 0.5f && s_state != STATE_DONE)
     {
         Ball_Move_Control();
     }

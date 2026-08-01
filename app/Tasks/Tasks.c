@@ -264,7 +264,7 @@ static void Task_3(void)
 
 /* ── Task_4 可调参数 ── */
 #define TASK4_KICK_ANGLE         10.0f  /* 起步补偿角度（°）                */
-#define TASK4_KICK_DELAY_TICKS   0.5f     /* 等车轮物理启动（1×20ms=20ms）  */
+#define TASK4_KICK_DELAY_TICKS   0.4f   /* 等车轮物理启动（0.4×20ms=8ms）   */
 #define TASK4_KICK_HOLD_TICKS    30U    /* 补偿保持（30×20ms=600ms）        */
 #define TASK4_CRUISE_TIME_TICKS  500U   /* 触发减速的全局计时（10s）         */
 #define TASK4_CRUISE_SPEED       14     /* 巡航速度（编码器单位）            */
@@ -293,7 +293,7 @@ static void Task_4(void)
         s_state      = STATE_CRUISE;
         s_timer      = 0U;
         s_decel_step = 0U;
-        s_kick_cnt   = TASK4_KICK_DELAY_TICKS + TASK4_KICK_HOLD_TICKS;
+        s_kick_cnt   = (float)TASK4_KICK_DELAY_TICKS + (float)TASK4_KICK_HOLD_TICKS;
 
         /* ── 小车：直接巡航速度 ── */
         PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, TASK4_CRUISE_SPEED);
@@ -383,9 +383,6 @@ static void Task_4(void)
  * ══════════════════════════════════════════════════════════════════════ */
 
 /* ── Task_5/6 可调参数（共用）── */
-#define TASK_CB_KICK_ANGLE        10.0f  /* 起步补偿角度（°）                */
-#define TASK_CB_KICK_DELAY_TICKS  1U     /* 等车轮物理启动（1×20ms=20ms）    */
-#define TASK_CB_KICK_HOLD_TICKS   30U    /* 补偿保持（30×20ms=600ms）        */
 #define TASK_CB_SOFT_START_STEPS  40U    /* 软启动步数，越小越快达巡航        */
 #define TASK_CB_CRUISE_SPEED      13     /* 巡航速度（编码器单位）            */
 #define TASK_CB_START_COOLDOWN    250U   /* 起步冷却，防起跑线误判终点（5s）  */
@@ -393,7 +390,16 @@ static void Task_4(void)
 #define TASK_CB_POST_LAP_TICKS    200U   /* 回A点后继续巡航计时（4s）         */
 #define TASK_CB_DECEL_STEPS       700U   /* 减速步数，越大停车越平滑（14s）   */
 
-static void Task_CruiseWithBall(float ball_target)
+/*
+ * @param ball_target  小球目标 X 坐标
+ * @param kick_angle   起步补偿角度（°）
+ * @param kick_delay   等车轮物理启动的帧数
+ * @param kick_hold    补偿保持帧数
+ */
+static void Task_CruiseWithBall(float ball_target,
+                                float kick_angle,
+                                float kick_delay,
+                                float kick_hold)
 {
     /* ── 状态机 ── */
     enum {
@@ -412,7 +418,9 @@ static void Task_CruiseWithBall(float ball_target)
     static uint16_t s_decel_step  = 0U;
     static uint8_t  s_cooldown    = 0U;
     static uint8_t  s_confirm     = 0U;
-    static uint8_t  s_kick_cnt    = 0U;    /* 起步补偿剩余帧数              */
+    static uint8_t  s_kick_cnt    = 0U;
+    static float    s_kick_angle  = 0.0f;  /* 本次启动的补偿角度              */
+    static uint8_t  s_kick_hold   = 0U;    /* 本次启动的补偿保持帧数          */
 
     /* ── 首次启动 / KEY1 重新启动 ── */
     if (s_last_gen != s_gen)
@@ -424,7 +432,9 @@ static void Task_CruiseWithBall(float ball_target)
         s_decel_step = 0U;
         s_cooldown   = (uint8_t)TASK_CB_START_COOLDOWN;
         s_confirm    = 0U;
-        s_kick_cnt   = TASK_CB_KICK_DELAY_TICKS + TASK_CB_KICK_HOLD_TICKS;
+        s_kick_angle = kick_angle;
+        s_kick_hold  = kick_hold;
+        s_kick_cnt   = kick_delay + kick_hold;
 
         /* ── 小车：初始速度=0，软启动缓升 ── */
         PID_EncoderSpeed_Set(&speed_loop, 50.0f, 100.0f, 0.0f, 0);
@@ -440,9 +450,9 @@ static void Task_CruiseWithBall(float ball_target)
     if (s_kick_cnt > 0U)
     {
         s_kick_cnt--;
-        if (s_kick_cnt < TASK_CB_KICK_HOLD_TICKS)
+        if (s_kick_cnt < s_kick_hold)
         {
-            Stepmotor_SetAngle(STEPMOTOR1, TASK_CB_KICK_ANGLE);
+            Stepmotor_SetAngle(STEPMOTOR1, s_kick_angle);
         }
     }
     else if (CAM_VALID > 0.5f && s_state != STATE_DONE)
@@ -544,16 +554,51 @@ static void Task_CruiseWithBall(float ball_target)
 /* ── Task_6 小球目标 X 坐标 ── */
 int16_t g_task6_ball_target = 0;
 
+/* ── Task_5 起步补偿参数 ── */
+#define TASK5_KICK_ANGLE        10.0f /* 起步补偿角度（°） */
+#define TASK5_KICK_DELAY_TICKS  1U    /* 等车轮物理启动（1×20ms=20ms） */
+#define TASK5_KICK_HOLD_TICKS   30U   /* 补偿保持（30×20ms=600ms） */
+
 /* Task_5：循迹一圈 + 小球稳定在 X=0 */
 static void Task_5(void)
 {
-    Task_CruiseWithBall(0.0f);
+    Task_CruiseWithBall(0.0f,
+                        TASK5_KICK_ANGLE,
+                        TASK5_KICK_DELAY_TICKS,
+                        TASK5_KICK_HOLD_TICKS);
 }
+
+/* ── Task_6 起步补偿参数（按目标象限分两套，独立调）── */
+#define TASK6_KICK_POS_ANGLE        10.0f  /* 目标 0~+12：起步补偿角度（°）       */
+#define TASK6_KICK_POS_DELAY_TICKS  3.5f     /* 目标 0~+12：等车轮物理启动（1×20ms=20ms）            */
+#define TASK6_KICK_POS_HOLD_TICKS   20U    /* 目标 0~+12：补偿保持（30×20ms=600ms）            */
+
+#define TASK6_KICK_NEG_ANGLE        10.0f  /* 目标 -12~0：起步补偿角度（°）      */
+#define TASK6_KICK_NEG_DELAY_TICKS  3.5f   /* 目标 -12~0：等车轮物理启动（3.5×20ms=70ms）            */
+#define TASK6_KICK_NEG_HOLD_TICKS   30U    /* 目标 -12~0：补偿保持（30×20ms=600ms）            */
 
 /* Task_6：循迹一圈 + 小球稳定在指定的 X 坐标处 */
 static void Task_6(void)
 {
-    Task_CruiseWithBall((float)g_task6_ball_target);
+    float   target = (float)g_task6_ball_target;
+    float   angle;
+    float   delay;
+    float   hold;
+
+    if (target >= 0.0f)
+    {
+        angle = TASK6_KICK_POS_ANGLE;
+        delay = TASK6_KICK_POS_DELAY_TICKS;
+        hold  = TASK6_KICK_POS_HOLD_TICKS;
+    }
+    else
+    {
+        angle = TASK6_KICK_NEG_ANGLE;
+        delay = TASK6_KICK_NEG_DELAY_TICKS;
+        hold  = TASK6_KICK_NEG_HOLD_TICKS;
+    }
+
+    Task_CruiseWithBall(target, angle, delay, hold);
 }
 
 /*
